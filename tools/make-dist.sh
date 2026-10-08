@@ -41,9 +41,10 @@ cd "checkout-$VERSION"
 git clone -q --depth 1 --branch "$VERSION" \
     https://dart.googlesource.com/sdk.git sdk
 
-# The .gclient file, and the CIPD packages the distfile keeps: everything but
-# the prebuilt toolchains, and only those whose DEPS condition holds for a
-# default Linux checkout (what make-dist.sh's gclient run downloads).
+# The .gclient file, and the CIPD packages the distfile keeps: only those
+# whose DEPS condition holds for a default Linux checkout, and none of the
+# prebuilt host tools. Those are the packages named per platform
+# (${platform}), plus the toolchain paths below.
 python3 - "$WORK/checkout-$VERSION" "$VERSION" <<'EOF'
 import json, sys
 root, version = sys.argv[1], sys.argv[2]
@@ -70,6 +71,8 @@ for path, d in ns['deps'].items():
     if any(path == e or path.startswith(e + '/') for e in excluded):
         continue
     for p in d['packages']:
+        if '{platform}' in p['package']:
+            continue
         fetch.append((path, p['package'], p['version'].format(**vars_)))
 open(root + '/.gclient', 'w').write(
     'solutions = [%r]\n' % {
@@ -133,6 +136,7 @@ sdk/third_party/gsutil
 sdk/third_party/firefox_jsshell
 sdk/third_party/jsc
 sdk/third_party/browsers
+sdk/third_party/gcloud
 EOF
 gtar --exclude-vcs -X ../exclude-$VERSION \
     --transform "s,^sdk,${NAME}," \
