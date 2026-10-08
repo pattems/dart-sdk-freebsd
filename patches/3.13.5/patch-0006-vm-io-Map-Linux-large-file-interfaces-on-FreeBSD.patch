@@ -1,0 +1,141 @@
+From d31572ecfe6ae2d0a5943220b06ebd112a789e53 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 18:07:54 -0400
+Subject: [PATCH 06/25] [vm,io] Map Linux large file interfaces on FreeBSD
+
+The Linux implementation uses the explicit large file interfaces
+(stat64, openat64, pread64, ...). FreeBSD has no *64 variants because
+its regular interfaces are always 64-bit. Add platform/largefile.h,
+which maps the names on FreeBSD, and include it where they are used.
+---
+ runtime/bin/directory_linux.cc        |  1 +
+ runtime/bin/file_linux.cc             |  1 +
+ runtime/bin/namespace_linux.cc        |  1 +
+ runtime/bin/process_linux.cc          |  1 +
+ runtime/bin/socket_base_linux.cc      |  1 +
+ runtime/platform/largefile.h          | 27 +++++++++++++++++++++++++++
+ runtime/platform/platform_sources.gni |  1 +
+ runtime/vm/os_linux.cc                |  1 +
+ 8 files changed, 34 insertions(+)
+ create mode 100644 runtime/platform/largefile.h
+
+diff --git a/runtime/bin/directory_linux.cc b/runtime/bin/directory_linux.cc
+index 6d9df40a..529261f0 100644
+--- a/runtime/bin/directory_linux.cc
++++ b/runtime/bin/directory_linux.cc
+@@ -22,6 +22,7 @@
+ #include "bin/file.h"
+ #include "bin/namespace.h"
+ #include "bin/platform.h"
++#include "platform/largefile.h"
+ #include "platform/signal_blocker.h"
+ 
+ namespace dart {
+diff --git a/runtime/bin/file_linux.cc b/runtime/bin/file_linux.cc
+index 04bb047b..4d6de71a 100644
+--- a/runtime/bin/file_linux.cc
++++ b/runtime/bin/file_linux.cc
+@@ -20,6 +20,7 @@
+ #include "bin/builtin.h"
+ #include "bin/fdutils.h"
+ #include "bin/namespace.h"
++#include "platform/largefile.h"
+ #include "platform/signal_blocker.h"
+ #include "platform/syslog.h"
+ #include "platform/utils.h"
+diff --git a/runtime/bin/namespace_linux.cc b/runtime/bin/namespace_linux.cc
+index c48ec219..7e6ad88f 100644
+--- a/runtime/bin/namespace_linux.cc
++++ b/runtime/bin/namespace_linux.cc
+@@ -11,6 +11,7 @@
+ #include <fcntl.h>
+ 
+ #include "bin/file.h"
++#include "platform/largefile.h"
+ #include "platform/signal_blocker.h"
+ #include "platform/text_buffer.h"
+ 
+diff --git a/runtime/bin/process_linux.cc b/runtime/bin/process_linux.cc
+index 4b26d9df..ca48fcee 100644
+--- a/runtime/bin/process_linux.cc
++++ b/runtime/bin/process_linux.cc
+@@ -24,6 +24,7 @@
+ #include "bin/lockers.h"
+ #include "bin/reference_counting.h"
+ #include "bin/thread.h"
++#include "platform/largefile.h"
+ #include "platform/syslog.h"
+ 
+ #include "platform/signal_blocker.h"
+diff --git a/runtime/bin/socket_base_linux.cc b/runtime/bin/socket_base_linux.cc
+index 230971fa..611103b8 100644
+--- a/runtime/bin/socket_base_linux.cc
++++ b/runtime/bin/socket_base_linux.cc
+@@ -21,6 +21,7 @@
+ #include "bin/file.h"
+ #include "bin/socket_base_linux.h"
+ #include "bin/thread.h"
++#include "platform/largefile.h"
+ #include "platform/signal_blocker.h"
+ 
+ namespace dart {
+diff --git a/runtime/platform/largefile.h b/runtime/platform/largefile.h
+new file mode 100644
+index 00000000..23530cdb
+--- /dev/null
++++ b/runtime/platform/largefile.h
+@@ -0,0 +1,27 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#ifndef RUNTIME_PLATFORM_LARGEFILE_H_
++#define RUNTIME_PLATFORM_LARGEFILE_H_
++
++#include "platform/globals.h"
++
++// The Linux implementation uses the explicit large file interfaces (stat64,
++// openat64, ...). On FreeBSD the regular interfaces are always 64-bit and
++// there are no *64 variants, so map them to the regular names.
++#if defined(__FreeBSD__)
++#define fstat64 fstat
++#define fstatat64 fstatat
++#define ftruncate64 ftruncate
++#define ino64_t ino_t
++#define lseek64 lseek
++#define lstat64 lstat
++#define off64_t off_t
++#define open64 open
++#define openat64 openat
++#define pread64 pread
++#define stat64 stat
++#endif  // defined(__FreeBSD__)
++
++#endif  // RUNTIME_PLATFORM_LARGEFILE_H_
+diff --git a/runtime/platform/platform_sources.gni b/runtime/platform/platform_sources.gni
+index a251272a..2b3fccc7 100644
+--- a/runtime/platform/platform_sources.gni
++++ b/runtime/platform/platform_sources.gni
+@@ -16,6 +16,7 @@ platform_sources = [
+   "floating_point_win.cc",
+   "floating_point_win.h",
+   "globals.h",
++  "largefile.h",
+   "growable_array.h",
+   "hashmap.cc",
+   "hashmap.h",
+diff --git a/runtime/vm/os_linux.cc b/runtime/vm/os_linux.cc
+index e102533b..669f291a 100644
+--- a/runtime/vm/os_linux.cc
++++ b/runtime/vm/os_linux.cc
+@@ -22,6 +22,7 @@
+ #include <time.h>          // NOLINT
+ #include <unistd.h>        // NOLINT
+ 
++#include "platform/largefile.h"
+ #include "platform/memory_sanitizer.h"
+ #include "platform/signal_blocker.h"
+ #include "platform/thread_sanitizer.h"
+-- 
+2.54.0
+

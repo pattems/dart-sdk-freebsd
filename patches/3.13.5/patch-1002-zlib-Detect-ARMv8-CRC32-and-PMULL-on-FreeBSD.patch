@@ -1,0 +1,80 @@
+From ef59616e590a209ae35935b3120a4da68637e5ef Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Tue, 6 Oct 2026 18:24:03 -0400
+Subject: [PATCH] [zlib] Detect ARMv8 CRC32 and PMULL on FreeBSD
+
+FreeBSD/arm64 builds of the Dart SDK fail: Dart's GN treats FreeBSD as a
+Linux variant, so BUILD.gn defines ARMV8_OS_LINUX and cpu_features.c
+includes the Linux-only <asm/hwcap.h>.
+
+Define ARMV8_OS_FREEBSD for current_os == "freebsd" and read the
+hardware capabilities with elf_aux_info(AT_HWCAP). FreeBSD's
+<machine/elf.h> defines HWCAP_CRC32 and HWCAP_PMULL with the same bits
+as Linux.
+---
+ BUILD.gn       |  2 ++
+ cpu_features.c | 14 ++++++++++++--
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/third_party/zlib/BUILD.gn b/third_party/zlib/BUILD.gn
+index eff72b2..189f136 100644
+--- a/third_party/zlib/BUILD.gn
++++ b/third_party/zlib/BUILD.gn
+@@ -123,6 +123,8 @@ if (use_arm_neon_optimizations) {
+     defines = [ "CRC32_ARMV8_CRC32" ]
+     if (is_android) {
+       defines += [ "ARMV8_OS_ANDROID" ]
++    } else if (current_os == "freebsd") {
++      defines += [ "ARMV8_OS_FREEBSD" ]
+     } else if (is_linux || is_chromeos) {
+       defines += [ "ARMV8_OS_LINUX" ]
+     } else if (is_mac) {
+diff --git a/third_party/zlib/cpu_features.c b/third_party/zlib/cpu_features.c
+index 34ae7b9..610ebd2 100644
+--- a/third_party/zlib/cpu_features.c
++++ b/third_party/zlib/cpu_features.c
+@@ -39,7 +39,8 @@ int ZLIB_INTERNAL riscv_cpu_enable_vclmul = 0;
+ #ifndef CPU_NO_SIMD
+ 
+ #if defined(ARMV8_OS_ANDROID) || defined(ARMV8_OS_LINUX) || \
+-    defined(ARMV8_OS_FUCHSIA) || defined(ARMV8_OS_IOS)
++    defined(ARMV8_OS_FUCHSIA) || defined(ARMV8_OS_IOS) || \
++    defined(ARMV8_OS_FREEBSD)
+ #include <pthread.h>
+ #endif
+ 
+@@ -48,6 +49,9 @@ int ZLIB_INTERNAL riscv_cpu_enable_vclmul = 0;
+ #elif defined(ARMV8_OS_LINUX)
+ #include <asm/hwcap.h>
+ #include <sys/auxv.h>
++#elif defined(ARMV8_OS_FREEBSD)
++#include <sys/auxv.h>
++#include <machine/elf.h>
+ #elif defined(ARMV8_OS_FUCHSIA)
+ #include <zircon/features.h>
+ #include <zircon/syscalls.h>
+@@ -69,7 +73,7 @@ static void _cpu_check_features(void);
+ #if defined(ARMV8_OS_ANDROID) || defined(ARMV8_OS_LINUX) || \
+     defined(ARMV8_OS_MACOS) || defined(ARMV8_OS_FUCHSIA) || \
+     defined(X86_NOT_WINDOWS) || defined(ARMV8_OS_IOS) || \
+-    defined(RISCV_RVV)
++    defined(RISCV_RVV) || defined(ARMV8_OS_FREEBSD)
+ #if !defined(ARMV8_OS_MACOS)
+ // _cpu_check_features() doesn't need to do anything on mac/arm since all
+ // features are known at build time, so don't call it.
+@@ -113,6 +117,12 @@ static void _cpu_check_features(void)
+     uint64_t features = android_getCpuFeatures();
+     arm_cpu_enable_crc32 = !!(features & ANDROID_CPU_ARM_FEATURE_CRC32);
+     arm_cpu_enable_pmull = !!(features & ANDROID_CPU_ARM_FEATURE_PMULL);
++#elif defined(ARMV8_OS_FREEBSD) && defined(__aarch64__)
++    unsigned long features = 0;
++    if (elf_aux_info(AT_HWCAP, &features, sizeof(features)) != 0)
++        return;
++    arm_cpu_enable_crc32 = !!(features & HWCAP_CRC32);
++    arm_cpu_enable_pmull = !!(features & HWCAP_PMULL);
+ #elif defined(ARMV8_OS_LINUX) && defined(__aarch64__)
+     unsigned long features = getauxval(AT_HWCAP);
+     arm_cpu_enable_crc32 = !!(features & HWCAP_CRC32);
+-- 
+2.54.0
+

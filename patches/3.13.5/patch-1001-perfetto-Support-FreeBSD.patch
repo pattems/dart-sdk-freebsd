@@ -1,0 +1,117 @@
+Subject: [PATCH] [perfetto] Backport FreeBSD support to the pinned Perfetto
+
+Dart pins Perfetto 13ce0c9e (October 2023), which rejects FreeBSD in
+perfetto/base/build_config.h. Upstream Perfetto supports FreeBSD since v53
+(google/perfetto#3467, 81c39c7f82); Dart rolled to v54 in CL 482781 but
+reverted in CL 483920 because of Flutter roll problems.
+
+Backport the parts of the code Dart builds: treat FreeBSD as a Linux
+variant (as the Dart VM does), get thread ids from
+pthread_getthreadid_np(), use CLOCK_MONOTONIC instead of the Linux-only
+CLOCK_MONOTONIC_RAW, and use procctl(PROC_PDEATHSIG_CTL) instead of
+prctl(PR_SET_PDEATHSIG). Drop this patch once Dart pins Perfetto v53 or
+later.
+---
+diff --git a/third_party/perfetto/src/include/perfetto/base/build_config.h b/third_party/perfetto/src/include/perfetto/base/build_config.h
+index 5002529..cf0707e 100644
+--- a/third_party/perfetto/src/include/perfetto/base/build_config.h
++++ b/third_party/perfetto/src/include/perfetto/base/build_config.h
+@@ -51,7 +51,9 @@
+ #define PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_MAC() 1
+ #define PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_IOS() 0
+ #endif
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__FreeBSD__)
++// FreeBSD is built as a Linux variant (as in the Dart VM); see the
++// __FreeBSD__ checks for where the two differ.
+ #define PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_ANDROID() 0
+ #define PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_LINUX() 1
+ #define PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_WIN() 0
+diff --git a/third_party/perfetto/src/include/perfetto/base/thread_utils.h b/third_party/perfetto/src/include/perfetto/base/thread_utils.h
+index be8b4db..1d901e9 100644
+--- a/third_party/perfetto/src/include/perfetto/base/thread_utils.h
++++ b/third_party/perfetto/src/include/perfetto/base/thread_utils.h
+@@ -38,6 +38,10 @@ __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId();
+ #include <pthread.h>
+ #endif
+ 
++#if defined(__FreeBSD__)
++#include <pthread_np.h>
++#endif
++
+ namespace perfetto {
+ namespace base {
+ 
+@@ -46,6 +50,11 @@ using PlatformThreadId = pid_t;
+ inline PlatformThreadId GetThreadId() {
+   return gettid();
+ }
++#elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) && defined(__FreeBSD__)
++using PlatformThreadId = pid_t;
++inline PlatformThreadId GetThreadId() {
++  return static_cast<pid_t>(pthread_getthreadid_np());
++}
+ #elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX)
+ using PlatformThreadId = pid_t;
+ inline PlatformThreadId GetThreadId() {
+diff --git a/third_party/perfetto/src/include/perfetto/base/time.h b/third_party/perfetto/src/include/perfetto/base/time.h
+index ea15dae..6ebd07f 100644
+--- a/third_party/perfetto/src/include/perfetto/base/time.h
++++ b/third_party/perfetto/src/include/perfetto/base/time.h
+@@ -181,7 +181,12 @@ inline TimeNanos GetWallTimeNs() {
+ }
+ 
+ inline TimeNanos GetWallTimeRawNs() {
++#if defined(__FreeBSD__)
++  // CLOCK_MONOTONIC_RAW is a Linux extension.
++  return GetTimeInternalNs(CLOCK_MONOTONIC);
++#else
+   return GetTimeInternalNs(CLOCK_MONOTONIC_RAW);
++#endif
+ }
+ 
+ inline TimeNanos GetThreadCPUTimeNs() {
+diff --git a/third_party/perfetto/src/src/base/subprocess_posix.cc b/third_party/perfetto/src/src/base/subprocess_posix.cc
+index fd32bb9..9bb6bbf 100644
+--- a/third_party/perfetto/src/src/base/subprocess_posix.cc
++++ b/third_party/perfetto/src/src/base/subprocess_posix.cc
+@@ -35,7 +35,9 @@
+ #include <thread>
+ #include <tuple>
+ 
+-#if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
++#if defined(__FreeBSD__)
++#include <sys/procctl.h>
++#elif PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
+     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+ #include <sys/prctl.h>
+ #endif
+@@ -69,7 +71,12 @@ void __attribute__((noreturn)) ChildProcess(ChildProcessArgs* args) {
+   // In no case we want a child process to outlive its parent process. This is
+   // relevant for tests, so that a test failure/crash doesn't leave child
+   // processes around that get reparented to init.
++#if defined(__FreeBSD__)
++  int pdeathsig = SIGKILL;
++  procctl(P_PID, 0, PROC_PDEATHSIG_CTL, &pdeathsig);
++#else
+   prctl(PR_SET_PDEATHSIG, SIGKILL);
++#endif
+ #endif
+ 
+   auto die = [args](const char* err) __attribute__((noreturn)) {
+diff --git a/third_party/perfetto/src/src/base/thread_task_runner.cc b/third_party/perfetto/src/src/base/thread_task_runner.cc
+index 08e3cea..95bdedc 100644
+--- a/third_party/perfetto/src/src/base/thread_task_runner.cc
++++ b/third_party/perfetto/src/src/base/thread_task_runner.cc
+@@ -27,8 +27,9 @@
+ #include "perfetto/ext/base/thread_utils.h"
+ #include "perfetto/ext/base/unix_task_runner.h"
+ 
+-#if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
+-    PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
++#if (PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
++     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)) && \
++    !defined(__FreeBSD__)
+ #include <sys/prctl.h>
+ #endif
+ 

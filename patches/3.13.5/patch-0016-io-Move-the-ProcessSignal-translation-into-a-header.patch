@@ -1,0 +1,207 @@
+From 6fb7aa09d283140994951df8749aa68006576c2f Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Tue, 6 Oct 2026 23:39:04 -0400
+Subject: [PATCH 16/25] [io] Move the ProcessSignal translation into a header
+
+ProcessSignal ids in dart:io are Linux signal numbers. The macOS
+implementation translates them to the system's numbers with
+SignalMap(). Move that function unchanged into bin/process_signal_map.h
+so that other implementations can use it.
+
+No behavior change.
+---
+ runtime/bin/io_impl_sources.gni  |  1 +
+ runtime/bin/process_macos.cc     | 65 +-----------------------
+ runtime/bin/process_signal_map.h | 85 ++++++++++++++++++++++++++++++++
+ 3 files changed, 87 insertions(+), 64 deletions(-)
+ create mode 100644 runtime/bin/process_signal_map.h
+
+diff --git a/runtime/bin/io_impl_sources.gni b/runtime/bin/io_impl_sources.gni
+index d3ace672..a47d661c 100644
+--- a/runtime/bin/io_impl_sources.gni
++++ b/runtime/bin/io_impl_sources.gni
+@@ -51,6 +51,7 @@ io_impl_sources = [
+   "process_fuchsia.cc",
+   "process_linux.cc",
+   "process_macos.cc",
++  "process_signal_map.h",
+   "process_win.cc",
+   "reference_counting.h",
+   "root_certificates_unsupported.cc",
+diff --git a/runtime/bin/process_macos.cc b/runtime/bin/process_macos.cc
+index 8aebf479..303e03b6 100644
+--- a/runtime/bin/process_macos.cc
++++ b/runtime/bin/process_macos.cc
+@@ -24,6 +24,7 @@
+ #include "bin/fdutils.h"
+ #include "bin/lockers.h"
+ #include "bin/namespace.h"
++#include "bin/process_signal_map.h"
+ #include "bin/thread.h"
+ #include "platform/syslog.h"
+ 
+@@ -920,70 +921,6 @@ int Process::Exec(Namespace* namespc,
+ #endif
+ }
+ 
+-static int SignalMap(intptr_t id) {
+-  switch (static_cast<ProcessSignals>(id)) {
+-    case kSighup:
+-      return SIGHUP;
+-    case kSigint:
+-      return SIGINT;
+-    case kSigquit:
+-      return SIGQUIT;
+-    case kSigill:
+-      return SIGILL;
+-    case kSigtrap:
+-      return SIGTRAP;
+-    case kSigabrt:
+-      return SIGABRT;
+-    case kSigbus:
+-      return SIGBUS;
+-    case kSigfpe:
+-      return SIGFPE;
+-    case kSigkill:
+-      return SIGKILL;
+-    case kSigusr1:
+-      return SIGUSR1;
+-    case kSigsegv:
+-      return SIGSEGV;
+-    case kSigusr2:
+-      return SIGUSR2;
+-    case kSigpipe:
+-      return SIGPIPE;
+-    case kSigalrm:
+-      return SIGALRM;
+-    case kSigterm:
+-      return SIGTERM;
+-    case kSigchld:
+-      return SIGCHLD;
+-    case kSigcont:
+-      return SIGCONT;
+-    case kSigstop:
+-      return SIGSTOP;
+-    case kSigtstp:
+-      return SIGTSTP;
+-    case kSigttin:
+-      return SIGTTIN;
+-    case kSigttou:
+-      return SIGTTOU;
+-    case kSigurg:
+-      return SIGURG;
+-    case kSigxcpu:
+-      return SIGXCPU;
+-    case kSigxfsz:
+-      return SIGXFSZ;
+-    case kSigvtalrm:
+-      return SIGVTALRM;
+-    case kSigprof:
+-      return SIGPROF;
+-    case kSigwinch:
+-      return SIGWINCH;
+-    case kSigpoll:
+-      return -1;
+-    case kSigsys:
+-      return SIGSYS;
+-  }
+-  return -1;
+-}
+-
+ bool Process::Kill(intptr_t id, int signal) {
+ #if defined(DART_HOST_OS_IOS)
+   return false;
+diff --git a/runtime/bin/process_signal_map.h b/runtime/bin/process_signal_map.h
+new file mode 100644
+index 00000000..87becd4d
+--- /dev/null
++++ b/runtime/bin/process_signal_map.h
+@@ -0,0 +1,85 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#ifndef RUNTIME_BIN_PROCESS_SIGNAL_MAP_H_
++#define RUNTIME_BIN_PROCESS_SIGNAL_MAP_H_
++
++#include <signal.h>
++
++#include "bin/process.h"
++
++namespace dart {
++namespace bin {
++
++// ProcessSignal ids in dart:io use the Linux signal numbers. Systems that
++// number signals differently translate them with this function.
++// Returns -1 for signals the system does not have.
++inline int SignalMap(intptr_t id) {
++  switch (static_cast<ProcessSignals>(id)) {
++    case kSighup:
++      return SIGHUP;
++    case kSigint:
++      return SIGINT;
++    case kSigquit:
++      return SIGQUIT;
++    case kSigill:
++      return SIGILL;
++    case kSigtrap:
++      return SIGTRAP;
++    case kSigabrt:
++      return SIGABRT;
++    case kSigbus:
++      return SIGBUS;
++    case kSigfpe:
++      return SIGFPE;
++    case kSigkill:
++      return SIGKILL;
++    case kSigusr1:
++      return SIGUSR1;
++    case kSigsegv:
++      return SIGSEGV;
++    case kSigusr2:
++      return SIGUSR2;
++    case kSigpipe:
++      return SIGPIPE;
++    case kSigalrm:
++      return SIGALRM;
++    case kSigterm:
++      return SIGTERM;
++    case kSigchld:
++      return SIGCHLD;
++    case kSigcont:
++      return SIGCONT;
++    case kSigstop:
++      return SIGSTOP;
++    case kSigtstp:
++      return SIGTSTP;
++    case kSigttin:
++      return SIGTTIN;
++    case kSigttou:
++      return SIGTTOU;
++    case kSigurg:
++      return SIGURG;
++    case kSigxcpu:
++      return SIGXCPU;
++    case kSigxfsz:
++      return SIGXFSZ;
++    case kSigvtalrm:
++      return SIGVTALRM;
++    case kSigprof:
++      return SIGPROF;
++    case kSigwinch:
++      return SIGWINCH;
++    case kSigpoll:
++      return -1;
++    case kSigsys:
++      return SIGSYS;
++  }
++  return -1;
++}
++
++}  // namespace bin
++}  // namespace dart
++
++#endif  // RUNTIME_BIN_PROCESS_SIGNAL_MAP_H_
+-- 
+2.54.0
+

@@ -1,0 +1,78 @@
+From 19b4bf73062286d04cc37c24c984909eb5978c97 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Wed, 7 Oct 2026 18:13:57 -0400
+Subject: [PATCH 24/25] [ffi] Accept musl and FreeBSD loader errors in tests
+
+dylib_open_test and native_assets/process_test check the dynamic
+loader's error message on Linux against glibc's wording. Other C
+libraries word these errors differently, so both tests fail with musl
+(Alpine Linux) and on FreeBSD:
+
+  dlopen   glibc:   libx.so: cannot open shared object file: No such
+                    file or directory
+           musl:    Error loading shared library libx.so: No such file
+                    or directory
+           FreeBSD: Shared object "libx.so" not found, required by ...
+  dlsym    glibc:   ...: undefined symbol: NAME
+           musl:    Symbol not found: NAME
+           FreeBSD: Undefined symbol "NAME"
+
+Check for the library or symbol name plus any of the known phrasings,
+as the macOS branch of dylib_open_test already does.
+
+TEST=ffi/dylib_open_test ffi/native_assets/process_test
+---
+ tests/ffi/dylib_open_test.dart            | 13 +++++++++----
+ tests/ffi/native_assets/process_test.dart | 12 ++++++++----
+ 2 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/tests/ffi/dylib_open_test.dart b/tests/ffi/dylib_open_test.dart
+index bcb7b963..d843cd94 100644
+--- a/tests/ffi/dylib_open_test.dart
++++ b/tests/ffi/dylib_open_test.dart
+@@ -25,10 +25,15 @@ void testDoesNotExist() {
+     );
+     Expect.contains('(error code: 126)', exception.message);
+   } else if (Platform.isLinux) {
+-    Expect.contains(
+-      'cannot open shared object file: No such file or directory',
+-      exception.message,
+-    );
++    // The wording depends on the C library: glibc says "cannot open shared
++    // object file: No such file or directory", musl "Error loading shared
++    // library ...: No such file or directory", FreeBSD's rtld "Shared
++    // object ... not found".
++    Expect.contains('libdoesnotexist1234.so', exception.message);
++    Expect.containsAny([
++      'No such file or directory',
++      'not found',
++    ], exception.message);
+   } else if (Platform.isMacOS) {
+     Expect.contains('libdoesnotexist1234.dylib', exception.message);
+     Expect.containsAny(['no such file', 'image not found'], exception.message);
+diff --git a/tests/ffi/native_assets/process_test.dart b/tests/ffi/native_assets/process_test.dart
+index aadcd0ec..2b90c395 100644
+--- a/tests/ffi/native_assets/process_test.dart
++++ b/tests/ffi/native_assets/process_test.dart
+@@ -82,10 +82,14 @@ void testFailure() {
+       Expect.contains('symbol_is_not_defined_29903211', e.message);
+       Expect.contains('symbol not found', e.message);
+     } else {
+-      Expect.contains(
+-        'undefined symbol: symbol_is_not_defined_29903211',
+-        e.message,
+-      );
++      // glibc and bionic say "undefined symbol: NAME", musl "Symbol not
++      // found: NAME", FreeBSD's rtld "Undefined symbol \"NAME\"".
++      Expect.contains('symbol_is_not_defined_29903211', e.message);
++      Expect.containsAny([
++        'undefined symbol',
++        'Undefined symbol',
++        'Symbol not found',
++      ], e.message);
+     }
+   }
+ }
+-- 
+2.54.0
+

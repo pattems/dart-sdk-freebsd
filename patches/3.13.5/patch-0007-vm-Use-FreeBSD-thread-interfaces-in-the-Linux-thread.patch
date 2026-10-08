@@ -1,0 +1,134 @@
+From d80511de6bc2bc83a6dd160792ca392e14dff684 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 18:09:34 -0400
+Subject: [PATCH 07/25] [vm] Use FreeBSD thread interfaces in the Linux thread
+ code
+
+* The kernel thread id comes from pthread_getthreadid_np() instead of
+  the gettid syscall.
+* Stack bounds come from pthread_attr_get_np() instead of
+  pthread_getattr_np().
+* pthread_t is a pointer on FreeBSD, so convert it to and from intptr_t
+  with reinterpret_cast.
+* setpriority() cannot target a single thread on FreeBSD, so
+  --worker_thread_priority is rejected there.
+---
+ runtime/vm/os_linux.cc        |  8 ++++++++
+ runtime/vm/os_thread_linux.cc | 32 ++++++++++++++++++++++++++++++++
+ 2 files changed, 40 insertions(+)
+
+diff --git a/runtime/vm/os_linux.cc b/runtime/vm/os_linux.cc
+index 669f291a..e431332e 100644
+--- a/runtime/vm/os_linux.cc
++++ b/runtime/vm/os_linux.cc
+@@ -22,6 +22,10 @@
+ #include <time.h>          // NOLINT
+ #include <unistd.h>        // NOLINT
+ 
++#if defined(__FreeBSD__)
++#include <pthread_np.h>  // NOLINT
++#endif
++
+ #include "platform/largefile.h"
+ #include "platform/memory_sanitizer.h"
+ #include "platform/signal_blocker.h"
+@@ -227,7 +231,11 @@ class JitDumpCodeObserver : public CodeObserver {
+     ev.size = sizeof(ev) + (name_length + 1) + size;
+     ev.time_stamp = OS::GetCurrentMonotonicTicks();
+     ev.process_id = getpid();
++#if defined(__FreeBSD__)
++    ev.thread_id = pthread_getthreadid_np();
++#else
+     ev.thread_id = syscall(SYS_gettid);
++#endif
+     ev.vma = base;
+     ev.code_address = base;
+     ev.code_size = size;
+diff --git a/runtime/vm/os_thread_linux.cc b/runtime/vm/os_thread_linux.cc
+index c3f112cc..580af8a1 100644
+--- a/runtime/vm/os_thread_linux.cc
++++ b/runtime/vm/os_thread_linux.cc
+@@ -14,6 +14,10 @@
+ #include <sys/syscall.h>
+ #include <sys/time.h>
+ 
++#if defined(__FreeBSD__)
++#include <pthread_np.h>
++#endif
++
+ #include "platform/address_sanitizer.h"
+ #include "platform/assert.h"
+ #include "platform/safe_stack.h"
+@@ -67,11 +71,16 @@ static void UnblockSIGPROF() {
+ // exits.
+ static void* ThreadStart(void* data_ptr) {
+   if (FLAG_worker_thread_priority != kMinInt) {
++#if defined(__FreeBSD__)
++    // setpriority() cannot target individual threads on FreeBSD.
++    FATAL("Setting thread priority is not supported on FreeBSD\n");
++#else
+     if (setpriority(PRIO_PROCESS, syscall(__NR_gettid),
+                     FLAG_worker_thread_priority) == -1) {
+       FATAL("Setting thread priority to %d failed: errno = %d\n",
+             FLAG_worker_thread_priority, errno);
+     }
++#endif
+   }
+ 
+   ThreadStartData* data = reinterpret_cast<ThreadStartData*>(data_ptr);
+@@ -132,7 +141,11 @@ intptr_t OSThread::GetMaxStackSize() {
+ 
+ #ifdef SUPPORT_TIMELINE
+ ThreadId OSThread::GetCurrentThreadTraceId() {
++#if defined(__FreeBSD__)
++  return ThreadIdFromIntPtr(pthread_getthreadid_np());
++#else
+   return syscall(__NR_gettid);
++#endif
+ }
+ #endif  // SUPPORT_TIMELINE
+ 
+@@ -166,21 +179,40 @@ void OSThread::Detach(ThreadJoinId id) {
+   VALIDATE_PTHREAD_RESULT(result);
+ }
+ 
++// pthread_t is an integer on Linux and a pointer on FreeBSD.
+ intptr_t OSThread::ThreadIdToIntPtr(ThreadId id) {
+   COMPILE_ASSERT(sizeof(id) <= sizeof(intptr_t));
++#if defined(__FreeBSD__)
++  return reinterpret_cast<intptr_t>(id);
++#else
+   return static_cast<intptr_t>(id);
++#endif
+ }
+ 
+ ThreadId OSThread::ThreadIdFromIntPtr(intptr_t id) {
++#if defined(__FreeBSD__)
++  return reinterpret_cast<ThreadId>(id);
++#else
+   return static_cast<ThreadId>(id);
++#endif
+ }
+ 
+ bool OSThread::GetCurrentStackBounds(uword* lower, uword* upper) {
+   pthread_attr_t attr;
++#if defined(__FreeBSD__)
++  if (pthread_attr_init(&attr) != 0) {
++    return false;
++  }
++  if (pthread_attr_get_np(pthread_self(), &attr) != 0) {
++    pthread_attr_destroy(&attr);
++    return false;
++  }
++#else
+   // May fail on the main thread.
+   if (pthread_getattr_np(pthread_self(), &attr) != 0) {
+     return false;
+   }
++#endif
+ 
+   void* base;
+   size_t size;
+-- 
+2.54.0
+

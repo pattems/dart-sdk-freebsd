@@ -1,0 +1,300 @@
+From c83191c33ca1985209808b16beafbf9058c8aadd Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 18:04:46 -0400
+Subject: [PATCH 03/25] [build] Allow building on and for FreeBSD as a Linux
+ variant
+
+The C++ side already selects DART_HOST_OS_LINUX for __FreeBSD__ (see
+runtime/platform/globals.h) and tools/gn.py already maps a FreeBSD host
+to target_os "freebsd", but GN had no notion of that OS and failed to
+configure.
+
+Treat current_os == "freebsd" as Linux (is_linux = true) and only
+special-case it where the two actually differ:
+
+* use the system clang (configurable via freebsd_clang_dir, default
+  /usr/bin) instead of the prebuilt Linux toolchain from CIPD, like the
+  alpine sysroot does, and skip the CIPD toolchain/sysroot stamps;
+* pass a FreeBSD --target triple;
+* set toolchain_os so secondary toolchains keep current_os "freebsd".
+---
+ build/config/BUILD.gn          |  3 ++-
+ build/config/BUILDCONFIG.gn    |  8 +++++--
+ build/config/compiler/BUILD.gn | 13 ++++++++--
+ build/toolchain/linux/BUILD.gn | 43 +++++++++++++++++++++++-----------
+ runtime/BUILD.gn               |  8 ++++---
+ sdk/BUILD.gn                   |  3 ++-
+ 6 files changed, 55 insertions(+), 23 deletions(-)
+
+diff --git a/build/config/BUILD.gn b/build/config/BUILD.gn
+index e27db320..dd69cb85 100644
+--- a/build/config/BUILD.gn
++++ b/build/config/BUILD.gn
+@@ -21,7 +21,8 @@ config("product") {
+ 
+ config("shared_library_config") {
+   if (current_os == "android" || current_os == "fuchsia" ||
+-      current_os == "linux" || current_os == "mac") {
++      current_os == "linux" || current_os == "freebsd" ||
++      current_os == "mac") {
+     cflags = [ "-fPIC" ]
+   }
+ }
+diff --git a/build/config/BUILDCONFIG.gn b/build/config/BUILDCONFIG.gn
+index cfb06870..266befe4 100644
+--- a/build/config/BUILDCONFIG.gn
++++ b/build/config/BUILDCONFIG.gn
+@@ -117,7 +117,8 @@ declare_args() {
+ 
+   # Set to true when compiling with the Clang compiler. Typically this is used
+   # to configure warnings.
+-  is_clang = current_os == "mac" || current_os == "linux"
++  is_clang = current_os == "mac" || current_os == "linux" ||
++             current_os == "freebsd"
+ 
+   # Compile for Address Sanitizer to find memory bugs.
+   is_asan = false
+@@ -201,7 +202,10 @@ if (current_os == "win") {
+   is_posix = true
+   is_watchos = false
+   is_win = false
+-} else if (current_os == "linux") {
++} else if (current_os == "linux" || current_os == "freebsd") {
++  # FreeBSD is built as a variant of Linux, matching the C++ side where
++  # __FreeBSD__ selects DART_HOST_OS_LINUX (see runtime/platform/globals.h).
++  # Use current_os == "freebsd" where the two differ.
+   is_android = false
+   is_chromeos = false
+   is_fuchsia = false
+diff --git a/build/config/compiler/BUILD.gn b/build/config/compiler/BUILD.gn
+index 2932b853..3b833e4f 100644
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -315,7 +315,15 @@ config("compiler") {
+   # ------------------------------------
+   if (is_linux) {
+     if (is_clang) {
+-      if (dart_sysroot == "alpine") {
++      if (current_os == "freebsd") {
++        if (current_cpu == "arm64") {
++          cflags += [ "--target=aarch64-unknown-freebsd" ]
++          ldflags += [ "--target=aarch64-unknown-freebsd" ]
++        } else if (current_cpu == "x64") {
++          cflags += [ "--target=x86_64-unknown-freebsd" ]
++          ldflags += [ "--target=x86_64-unknown-freebsd" ]
++        }
++      } else if (dart_sysroot == "alpine") {
+         # alpine linux target names can be found at:
+         # https://pkgs.alpinelinux.org/contents?file=stdc%2B%2B.h&name=libstdc%2B%2B-dev
+         if (current_cpu == "arm") {
+@@ -430,7 +438,8 @@ config("compiler") {
+   # changes since artifacts from an older version of the toolchain may or may
+   # not be compatible with newer ones. To achieve this, we insert a synthetic
+   # define into the compile line.
+-  if (is_clang && (is_linux || is_mac || is_ios) && dart_sysroot != "alpine") {
++  if (is_clang && (is_linux || is_mac || is_ios) && dart_sysroot != "alpine" &&
++      current_os != "freebsd") {
+     if (is_linux && host_cpu == "arm64") {
+       toolchain_stamp_file =
+           "//buildtools/linux-arm64/clang/.versions/clang.cipd_version"
+diff --git a/build/toolchain/linux/BUILD.gn b/build/toolchain/linux/BUILD.gn
+index b37bfbe2..d2d405c4 100644
+--- a/build/toolchain/linux/BUILD.gn
++++ b/build/toolchain/linux/BUILD.gn
+@@ -15,6 +15,11 @@ declare_args() {
+   arm64_toolchain_prefix = ""
+   riscv32_toolchain_prefix = ""
+   riscv64_toolchain_prefix = ""
++
++  # Directory holding clang and the llvm-* tools when building on FreeBSD.
++  # The base system provides them in /usr/bin; a newer toolchain from ports
++  # can be selected with e.g. "/usr/local/llvm21/bin".
++  freebsd_clang_dir = "/usr/bin"
+ }
+ 
+ if (use_rbe) {
+@@ -44,8 +49,10 @@ if (use_rbe) {
+   gcc_compiler_prefix = compiler_prefix
+ }
+ 
+-# Google's clang does not work for alpine, use alpine's system clang
+-if (dart_sysroot == "alpine") {
++# Google's clang does not work for alpine or FreeBSD, use the system clang
++if (host_os == "freebsd") {
++  rebased_clang_dir = freebsd_clang_dir
++} else if (dart_sysroot == "alpine") {
+   rebased_clang_dir = "/usr/bin"
+ } else if (host_cpu == "arm64") {
+   rebased_clang_dir =
+@@ -55,6 +62,14 @@ if (dart_sysroot == "alpine") {
+       rebase_path("//buildtools/linux-x64/clang/bin", root_build_dir)
+ }
+ 
++# The toolchains in this file also build for FreeBSD, which is a Linux variant
++# (see //build/config/BUILDCONFIG.gn).
++if (target_os == "freebsd") {
++  linux_toolchain_os = "freebsd"
++} else {
++  linux_toolchain_os = "linux"
++}
++
+ template("gcc_toolchain_suite") {
+   toolchain_suite(target_name) {
+     toolchain_template = "gcc_toolchain"
+@@ -79,7 +94,7 @@ gcc_toolchain_suite("arm") {
+   strip = "${prefix}strip"
+ 
+   toolchain_cpu = "arm"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = false
+ }
+ 
+@@ -95,7 +110,7 @@ gcc_toolchain_suite("clang_arm") {
+   llvm_objcopy = "${prefix}/llvm-objcopy"
+ 
+   toolchain_cpu = "arm"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = true
+ }
+ 
+@@ -116,7 +131,7 @@ gcc_toolchain_suite("arm64") {
+   strip = "${prefix}strip"
+ 
+   toolchain_cpu = "arm64"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = false
+ }
+ 
+@@ -132,7 +147,7 @@ gcc_toolchain_suite("clang_arm64") {
+   llvm_objcopy = "${prefix}/llvm-objcopy"
+ 
+   toolchain_cpu = "arm64"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = true
+ }
+ 
+@@ -148,7 +163,7 @@ gcc_toolchain_suite("clang_x86") {
+   llvm_objcopy = "${prefix}/llvm-objcopy"
+ 
+   toolchain_cpu = "x86"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = true
+ }
+ 
+@@ -168,7 +183,7 @@ gcc_toolchain_suite("x86") {
+   strip = "${prefix}strip"
+ 
+   toolchain_cpu = "x86"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = false
+ }
+ 
+@@ -184,7 +199,7 @@ gcc_toolchain_suite("clang_x64") {
+   llvm_objcopy = "${prefix}/llvm-objcopy"
+ 
+   toolchain_cpu = "x64"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = true
+ }
+ 
+@@ -204,7 +219,7 @@ gcc_toolchain_suite("x64") {
+   strip = "${prefix}strip"
+ 
+   toolchain_cpu = "x64"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = false
+ }
+ 
+@@ -225,7 +240,7 @@ gcc_toolchain_suite("riscv32") {
+   strip = "${prefix}strip"
+ 
+   toolchain_cpu = "riscv32"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = false
+ }
+ 
+@@ -241,7 +256,7 @@ gcc_toolchain_suite("clang_riscv32") {
+   llvm_objcopy = "${prefix}/llvm-objcopy"
+ 
+   toolchain_cpu = "riscv32"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = true
+ }
+ 
+@@ -262,7 +277,7 @@ gcc_toolchain_suite("riscv64") {
+   strip = "${prefix}strip"
+ 
+   toolchain_cpu = "riscv64"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = false
+ }
+ 
+@@ -278,6 +293,6 @@ gcc_toolchain_suite("clang_riscv64") {
+   llvm_objcopy = "${prefix}/llvm-objcopy"
+ 
+   toolchain_cpu = "riscv64"
+-  toolchain_os = "linux"
++  toolchain_os = linux_toolchain_os
+   is_clang = true
+ }
+diff --git a/runtime/BUILD.gn b/runtime/BUILD.gn
+index 5c3eb760..9b60a0d2 100644
+--- a/runtime/BUILD.gn
++++ b/runtime/BUILD.gn
+@@ -31,7 +31,7 @@ config("dart_maybe_product_config") {
+     }
+     assert(!dart_debug)
+     defines += [ "PRODUCT" ]
+-    if (target_os == "linux") {
++    if (target_os == "linux" || target_os == "freebsd") {
+       defines += [ "DART_DISABLE_TIMELINE" ]
+     }
+   }
+@@ -44,7 +44,8 @@ config("dart_product_config") {
+   cflags = []
+   if (!dart_debug) {
+     defines += [ "PRODUCT" ]
+-    if (dart_runtime_mode == "release" && target_os == "linux") {
++    if (dart_runtime_mode == "release" &&
++        (target_os == "linux" || target_os == "freebsd")) {
+       defines += [ "DART_DISABLE_TIMELINE" ]
+     }
+   }
+@@ -125,7 +126,8 @@ config("dart_os_config") {
+     # If we need to differentiate iOS and watchOS targets later, we'll
+     # change this.
+     defines += [ "DART_TARGET_OS_MACOS_IOS" ]
+-  } else if (target_os == "linux") {
++  } else if (target_os == "linux" || target_os == "freebsd") {
++    # FreeBSD is a Linux variant, see //build/config/BUILDCONFIG.gn.
+     defines += [ "DART_TARGET_OS_LINUX" ]
+   } else if (target_os == "mac") {
+     defines += [ "DART_TARGET_OS_MACOS" ]
+diff --git a/sdk/BUILD.gn b/sdk/BUILD.gn
+index 04bd1e7d..f9598ead 100644
+--- a/sdk/BUILD.gn
++++ b/sdk/BUILD.gn
+@@ -177,7 +177,8 @@ if (dart_snapshot_kind == "app-jit") {
+ # dart2bytecode is an AOT snapshot, which is not supported on the ia32
+ # architecture. It is only included as needed on a subset of OS targets.
+ if ((dart_target_arch == "x64" || dart_target_arch == "arm64") &&
+-    (dart_dynamic_modules || target_os == "linux" || target_os == "mac")) {
++    (dart_dynamic_modules || target_os == "linux" || target_os == "freebsd" ||
++     target_os == "mac")) {
+   _sdk_snapshots += [ [
+         "dart2bytecode",
+         "../utils/dart2bytecode:dart2bytecode",
+-- 
+2.54.0
+

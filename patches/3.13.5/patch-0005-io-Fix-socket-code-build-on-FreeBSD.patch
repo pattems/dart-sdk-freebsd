@@ -1,0 +1,46 @@
+From 39faea8d8a503396a5a28769485fca60280cd593 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 18:07:07 -0400
+Subject: [PATCH 05/25] [io] Fix socket code build on FreeBSD
+
+socket_base.h uses sockaddr_in and sockaddr_in6, which POSIX declares in
+<netinet/in.h>. glibc happens to pull it in through <netdb.h>; FreeBSD
+does not, so include it explicitly.
+
+ENONET is Linux-specific; only check for it where it exists.
+---
+ runtime/bin/socket_base_linux.h | 1 +
+ runtime/bin/socket_linux.cc     | 5 ++++-
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/runtime/bin/socket_base_linux.h b/runtime/bin/socket_base_linux.h
+index 42f5439d..07cd6a19 100644
+--- a/runtime/bin/socket_base_linux.h
++++ b/runtime/bin/socket_base_linux.h
+@@ -11,6 +11,7 @@
+ 
+ #include <arpa/inet.h>
+ #include <netdb.h>
++#include <netinet/in.h>
+ #include <sys/socket.h>
+ #include <sys/un.h>
+ 
+diff --git a/runtime/bin/socket_linux.cc b/runtime/bin/socket_linux.cc
+index cbd00abc..589f3639 100644
+--- a/runtime/bin/socket_linux.cc
++++ b/runtime/bin/socket_linux.cc
+@@ -241,7 +241,10 @@ static bool IsTemporaryAcceptError(int error) {
+   // On Linux a number of protocol errors should be treated as EAGAIN.
+   // These are the ones for TCP/IP.
+   return (error == EAGAIN) || (error == ENETDOWN) || (error == EPROTO) ||
+-         (error == ENOPROTOOPT) || (error == EHOSTDOWN) || (error == ENONET) ||
++         (error == ENOPROTOOPT) || (error == EHOSTDOWN) ||
++#if defined(ENONET)  // Not defined on FreeBSD.
++         (error == ENONET) ||
++#endif
+          (error == EHOSTUNREACH) || (error == EOPNOTSUPP) ||
+          (error == ENETUNREACH);
+ }
+-- 
+2.54.0
+

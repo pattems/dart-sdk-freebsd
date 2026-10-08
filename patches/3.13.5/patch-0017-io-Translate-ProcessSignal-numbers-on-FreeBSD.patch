@@ -1,0 +1,74 @@
+From 18dca71a77001bb6c79767a8851bf81a0f7bc0ef Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Tue, 6 Oct 2026 23:39:04 -0400
+Subject: [PATCH 17/25] [io] Translate ProcessSignal numbers on FreeBSD
+
+ProcessSignal ids in dart:io are Linux signal numbers, and the Linux
+implementation passes them to the system unchanged. FreeBSD numbers
+several signals differently: ProcessSignal.sigusr1 (10) is SIGBUS there.
+
+Translate them with SignalMap() from bin/process_signal_map.h on
+FreeBSD, as the macOS implementation does.
+---
+ runtime/bin/process_linux.cc | 23 ++++++++++++++++++++++-
+ 1 file changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/runtime/bin/process_linux.cc b/runtime/bin/process_linux.cc
+index 2eca4e4a..55ec25c0 100644
+--- a/runtime/bin/process_linux.cc
++++ b/runtime/bin/process_linux.cc
+@@ -28,6 +28,9 @@
+ #include "bin/file.h"
+ #include "bin/lockers.h"
+ #include "bin/reference_counting.h"
++#if defined(__FreeBSD__)
++#include "bin/process_signal_map.h"
++#endif
+ #include "bin/thread.h"
+ #include "platform/largefile.h"
+ #include "platform/syslog.h"
+@@ -972,8 +975,18 @@ int Process::Exec(Namespace* namespc,
+   return -1;
+ }
+ 
++// ProcessSignal ids are Linux signal numbers; FreeBSD numbers some signals
++// differently (e.g. SIGUSR1 is 30, while 10 is SIGBUS).
++static int OsSignal(intptr_t signal) {
++#if defined(__FreeBSD__)
++  return SignalMap(signal);
++#else
++  return signal;
++#endif
++}
++
+ bool Process::Kill(intptr_t id, int signal) {
+-  return (TEMP_FAILURE_RETRY(kill(id, signal)) != -1);
++  return (TEMP_FAILURE_RETRY(kill(id, OsSignal(signal))) != -1);
+ }
+ 
+ void Process::TerminateExitCodeHandler() {
+@@ -1056,6 +1069,10 @@ static void SignalHandler(int signal) {
+ }
+ 
+ intptr_t Process::SetSignalHandler(intptr_t signal) {
++  signal = OsSignal(signal);
++  if (signal == -1) {
++    return -1;
++  }
+   bool found = false;
+   for (int i = 0; i < kSignalsCount; i++) {
+     if (kSignals[i] == signal) {
+@@ -1107,6 +1124,10 @@ intptr_t Process::SetSignalHandler(intptr_t signal) {
+ }
+ 
+ void Process::ClearSignalHandler(intptr_t signal, Dart_Port port) {
++  signal = OsSignal(signal);
++  if (signal == -1) {
++    return;
++  }
+   ThreadSignalBlocker blocker(kSignalsCount, kSignals);
+   MutexLocker lock(signal_mutex);
+   SignalInfo* handler = signal_handlers;
+-- 
+2.54.0
+

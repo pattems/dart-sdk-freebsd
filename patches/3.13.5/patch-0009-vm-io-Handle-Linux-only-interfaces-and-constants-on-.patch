@@ -1,0 +1,187 @@
+From 9c5e4d87a9eebb8a9a05012a5c3b761202589591 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Tue, 6 Oct 2026 00:19:15 -0400
+Subject: [PATCH 09/25] [vm,io] Handle Linux-only interfaces and constants on
+ FreeBSD
+
+* FreeBSD has no prctl(). Naming anonymous mappings (PR_SET_VMA) has no
+  equivalent and is skipped. For PR_SET_NAME, which names the calling
+  thread, use pthread_setname_np() instead.
+* FreeBSD has no __NR_getrandom; call its getrandom(2) directly.
+* BUS_MCEERR_AR/AO (machine check errors) are Linux-specific.
+* FreeBSD does not declare environ in <unistd.h>; declare it as
+  process_linux.cc already does.
+* FreeBSD removed MAP_NORESERVE, and its mappings never reserve swap up
+  front, so treat it as 0.
+* FreeBSD's headers define ElfW; do not redefine it, which failed with
+  -Wmacro-redefined.
+---
+ runtime/bin/crypto_linux.cc         |  8 ++++++++
+ runtime/bin/platform_linux.cc       | 18 +++++++++++++++++-
+ runtime/bin/virtual_memory_posix.cc |  6 ++++--
+ runtime/vm/os_linux.cc              |  3 +++
+ runtime/vm/virtual_memory_posix.cc  | 11 +++++++++--
+ 5 files changed, 41 insertions(+), 5 deletions(-)
+
+diff --git a/runtime/bin/crypto_linux.cc b/runtime/bin/crypto_linux.cc
+index 16a0c866..9b2c8014 100644
+--- a/runtime/bin/crypto_linux.cc
++++ b/runtime/bin/crypto_linux.cc
+@@ -9,6 +9,10 @@
+ #include <fcntl.h>
+ #include <sys/syscall.h>
+ 
++#if defined(__FreeBSD__)
++#include <sys/random.h>
++#endif
++
+ #include "bin/crypto.h"
+ #include "bin/fdutils.h"
+ #include "platform/memory_sanitizer.h"
+@@ -45,8 +49,12 @@ bool Crypto::GetRandomBytes(intptr_t count, uint8_t* buffer) {
+   do {
+     ssize_t res;
+     do {
++#if defined(__FreeBSD__)
++      res = getrandom(buffer + bytes_read, count - bytes_read, /*flags=*/0);
++#else
+       res = syscall(__NR_getrandom, buffer + bytes_read, count - bytes_read,
+                     /*flags=*/0);
++#endif
+     } while (res == -1 && errno == EINTR);
+     if (res == -1) {
+       if (errno == ENOSYS) {
+diff --git a/runtime/bin/platform_linux.cc b/runtime/bin/platform_linux.cc
+index 42512e19..d393c37d 100644
+--- a/runtime/bin/platform_linux.cc
++++ b/runtime/bin/platform_linux.cc
+@@ -10,7 +10,6 @@
+ #include <errno.h>
+ #include <signal.h>
+ #include <string.h>
+-#include <sys/prctl.h>
+ #include <sys/resource.h>
+ #if defined(DART_HOST_OS_ANDROID)
+ #include <sys/system_properties.h>
+@@ -18,9 +17,19 @@
+ #include <sys/utsname.h>
+ #include <unistd.h>
+ 
++#if defined(__FreeBSD__)
++#include <pthread_np.h>
++#else
++#include <sys/prctl.h>
++#endif
++
+ #include "bin/console.h"
+ #include "bin/file.h"
+ 
++#if defined(__FreeBSD__)
++extern char** environ;
++#endif
++
+ namespace dart {
+ namespace bin {
+ 
+@@ -45,8 +54,10 @@ static const char* strcode(int si_signo, int si_code) {
+   CASE(SIGBUS, BUS_ADRALN);
+   CASE(SIGBUS, BUS_ADRERR);
+   CASE(SIGBUS, BUS_OBJERR);
++#if defined(BUS_MCEERR_AR)  // Linux-specific machine check codes.
+   CASE(SIGBUS, BUS_MCEERR_AR);
+   CASE(SIGBUS, BUS_MCEERR_AO);
++#endif
+   CASE(SIGTRAP, TRAP_BRKPT);
+   CASE(SIGTRAP, TRAP_TRACE);
+ #undef CASE
+@@ -195,7 +206,12 @@ intptr_t Platform::ResolveExecutablePathInto(char* result, size_t result_size) {
+ }
+ 
+ void Platform::SetProcessName(const char* name) {
++#if defined(__FreeBSD__)
++  // Like PR_SET_NAME, this names the calling thread.
++  pthread_setname_np(pthread_self(), name);
++#else
+   prctl(PR_SET_NAME, reinterpret_cast<unsigned long>(name), 0, 0, 0);  // NOLINT
++#endif
+ }
+ 
+ void Platform::Exit(int exit_code) {
+diff --git a/runtime/bin/virtual_memory_posix.cc b/runtime/bin/virtual_memory_posix.cc
+index da2b0759..18be0bd7 100644
+--- a/runtime/bin/virtual_memory_posix.cc
++++ b/runtime/bin/virtual_memory_posix.cc
+@@ -12,7 +12,8 @@
+ #include <sys/mman.h>
+ #include <unistd.h>
+ 
+-#if defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX)
++#if (defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX)) && \
++    !defined(__FreeBSD__)
+ #include <sys/prctl.h>
+ #endif
+ 
+@@ -72,7 +73,8 @@ VirtualMemory* VirtualMemory::Allocate(intptr_t size,
+     return nullptr;
+   }
+ 
+-#if defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX)
++#if (defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX)) && \
++    !defined(__FreeBSD__)
+   // PR_SET_VMA was only added to mainline Linux in 5.17, and some versions of
+   // the Android NDK have incorrect headers, so we manually define it if absent.
+ #if !defined(PR_SET_VMA)
+diff --git a/runtime/vm/os_linux.cc b/runtime/vm/os_linux.cc
+index e431332e..310728a1 100644
+--- a/runtime/vm/os_linux.cc
++++ b/runtime/vm/os_linux.cc
+@@ -45,11 +45,14 @@
+ namespace dart {
+ 
+ // Used to choose between Elf32/Elf64 types based on host archotecture bitsize.
++// Some C libraries (e.g. FreeBSD's) already provide it.
++#if !defined(ElfW)
+ #if defined(ARCH_IS_64_BIT)
+ #define ElfW(Type) Elf64_##Type
+ #else
+ #define ElfW(Type) Elf32_##Type
+ #endif
++#endif  // !defined(ElfW)
+ 
+ // Missing from older versions of <elf.h>.
+ #if !defined(EM_RISCV)
+diff --git a/runtime/vm/virtual_memory_posix.cc b/runtime/vm/virtual_memory_posix.cc
+index 823c44ce..0f27cd76 100644
+--- a/runtime/vm/virtual_memory_posix.cc
++++ b/runtime/vm/virtual_memory_posix.cc
+@@ -15,10 +15,16 @@
+ #include <sys/syscall.h>
+ #include <unistd.h>
+ 
+-#if defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX)
++#if (defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX)) && \
++    !defined(__FreeBSD__)
+ #include <sys/prctl.h>
+ #endif
+ 
++// FreeBSD removed MAP_NORESERVE; reservations do not commit swap there.
++#if !defined(MAP_NORESERVE)
++#define MAP_NORESERVE 0
++#endif
++
+ #if defined(DART_HOST_OS_MACOS)
+ #include <mach/mach_init.h>
+ #include <mach/vm_map.h>
+@@ -679,7 +685,8 @@ VirtualMemory* VirtualMemory::AllocateAligned(intptr_t size,
+   }
+ #endif  // defined(DART_ENABLE_RX_WORKAROUNDS)
+ 
+-#if defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX)
++#if (defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX)) && \
++    !defined(__FreeBSD__)
+   // PR_SET_VMA was only added to mainline Linux in 5.17, and some versions of
+   // the Android NDK have incorrect headers, so we manually define it if absent.
+ #if !defined(PR_SET_VMA)
+-- 
+2.54.0
+

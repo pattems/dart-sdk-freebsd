@@ -1,0 +1,99 @@
+From 35e0b1757a6a3457376f9e9a53d8663bba610e11 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Tue, 6 Oct 2026 00:19:16 -0400
+Subject: [PATCH 18/25] [io] Match Linux UDP socket behavior on FreeBSD
+
+* dart:io passes interface index 0 to let the kernel choose the
+  multicast interface. FreeBSD rejects that for MCAST_JOIN_GROUP
+  (EADDRNOTAVAIL). Use IP_ADD_MEMBERSHIP with struct ip_mreqn and
+  IPV6_JOIN_GROUP instead, which accept an index of 0 and, like the
+  Linux code, do not need the interface address (dart:io only passes
+  that on macOS).
+* On Linux, SO_REUSEADDR lets several UDP sockets bind the same address
+  and port. On FreeBSD that also needs SO_REUSEPORT, so set it for
+  datagram sockets with reuseAddress. Code written against the Linux
+  behavior, such as mDNS clients, then works.
+---
+ runtime/bin/socket_base_linux.cc | 41 ++++++++++++++++++++++++++++++++
+ runtime/bin/socket_linux.cc      |  6 +++++
+ 2 files changed, 47 insertions(+)
+
+diff --git a/runtime/bin/socket_base_linux.cc b/runtime/bin/socket_base_linux.cc
+index 611103b8..ce1e6edb 100644
+--- a/runtime/bin/socket_base_linux.cc
++++ b/runtime/bin/socket_base_linux.cc
+@@ -141,6 +141,46 @@ bool SocketBase::GetOption(intptr_t fd,
+   return result == 0;
+ }
+ 
++#if defined(__FreeBSD__)
++// FreeBSD rejects MCAST_JOIN_GROUP without an interface index, which is how
++// dart:io asks the kernel to choose the interface. The older interfaces accept
++// an index of 0 for that. dart:io does not pass an interface address here
++// (only on macOS), so use the index based ip_mreqn for IPv4.
++static bool JoinOrLeaveMulticast(intptr_t fd,
++                                 const RawAddr& addr,
++                                 int interfaceIndex,
++                                 bool join) {
++  if (addr.addr.sa_family == AF_INET) {
++    struct ip_mreqn mreq = {};
++    mreq.imr_multiaddr = addr.in.sin_addr;
++    mreq.imr_ifindex = interfaceIndex;
++    return NO_RETRY_EXPECTED(setsockopt(
++               fd, IPPROTO_IP, join ? IP_ADD_MEMBERSHIP : IP_DROP_MEMBERSHIP,
++               &mreq, sizeof(mreq))) == 0;
++  }
++  ASSERT(addr.addr.sa_family == AF_INET6);
++  struct ipv6_mreq mreq = {};
++  mreq.ipv6mr_multiaddr = addr.in6.sin6_addr;
++  mreq.ipv6mr_interface = interfaceIndex;
++  return NO_RETRY_EXPECTED(setsockopt(
++             fd, IPPROTO_IPV6, join ? IPV6_JOIN_GROUP : IPV6_LEAVE_GROUP,
++             &mreq, sizeof(mreq))) == 0;
++}
++
++bool SocketBase::JoinMulticast(intptr_t fd,
++                               const RawAddr& addr,
++                               const RawAddr&,
++                               int interfaceIndex) {
++  return JoinOrLeaveMulticast(fd, addr, interfaceIndex, true);
++}
++
++bool SocketBase::LeaveMulticast(intptr_t fd,
++                                const RawAddr& addr,
++                                const RawAddr&,
++                                int interfaceIndex) {
++  return JoinOrLeaveMulticast(fd, addr, interfaceIndex, false);
++}
++#else
+ bool SocketBase::JoinMulticast(intptr_t fd,
+                                const RawAddr& addr,
+                                const RawAddr&,
+@@ -164,6 +204,7 @@ bool SocketBase::LeaveMulticast(intptr_t fd,
+   return NO_RETRY_EXPECTED(setsockopt(fd, proto, MCAST_LEAVE_GROUP, &mreq,
+                                       sizeof(mreq))) == 0;
+ }
++#endif  // defined(__FreeBSD__)
+ 
+ }  // namespace bin
+ }  // namespace dart
+diff --git a/runtime/bin/socket_linux.cc b/runtime/bin/socket_linux.cc
+index 589f3639..2aac6cf0 100644
+--- a/runtime/bin/socket_linux.cc
++++ b/runtime/bin/socket_linux.cc
+@@ -132,6 +132,12 @@ intptr_t Socket::CreateBindDatagram(const RawAddr& addr,
+     int optval = 1;
+     VOID_NO_RETRY_EXPECTED(
+         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)));
++#if defined(__FreeBSD__)
++    // On Linux, SO_REUSEADDR lets several UDP sockets bind the same address
++    // and port. On FreeBSD that needs SO_REUSEPORT as well.
++    VOID_NO_RETRY_EXPECTED(
++        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval)));
++#endif
+   }
+ 
+   if (reusePort) {
+-- 
+2.54.0
+

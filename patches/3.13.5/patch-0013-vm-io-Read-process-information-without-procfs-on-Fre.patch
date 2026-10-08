@@ -1,0 +1,199 @@
+From a6995a0daae6bb2a9cebf19fddd4a6686a78c845 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Tue, 6 Oct 2026 23:39:04 -0400
+Subject: [PATCH 13/25] [vm,io] Read process information without procfs on
+ FreeBSD
+
+FreeBSD does not mount procfs by default, so:
+
+* get the executable path from sysctl(KERN_PROC_PATHNAME) instead of
+  /proc/self/exe;
+* get the path of an open file from fcntl(F_KINFO) instead of
+  /proc/self/fd/N;
+* get the current RSS from sysctl(KERN_PROC_PID) instead of
+  /proc/self/statm.
+---
+ runtime/bin/platform_linux.cc | 32 ++++++++++++++++++++++++++++++++
+ runtime/bin/process_linux.cc  | 30 ++++++++++++++++++++++++++++++
+ runtime/vm/os_linux.cc        | 14 ++++++++++++++
+ 3 files changed, 76 insertions(+)
+
+diff --git a/runtime/bin/platform_linux.cc b/runtime/bin/platform_linux.cc
+index d393c37d..2dd29fad 100644
+--- a/runtime/bin/platform_linux.cc
++++ b/runtime/bin/platform_linux.cc
+@@ -19,11 +19,13 @@
+ 
+ #if defined(__FreeBSD__)
+ #include <pthread_np.h>
++#include <sys/sysctl.h>
+ #else
+ #include <sys/prctl.h>
+ #endif
+ 
+ #include "bin/console.h"
++#include "bin/dartutils.h"
+ #include "bin/file.h"
+ 
+ #if defined(__FreeBSD__)
+@@ -197,12 +199,42 @@ const char* Platform::GetExecutableName() {
+   return executable_name_;
+ }
+ 
++#if defined(__FreeBSD__)
++// FreeBSD does not mount procfs by default, so there is no /proc/self/exe.
++// Ask the kernel for the executable's path instead. Like File::ReadLinkInto,
++// returns the length including the terminating NUL, or -1 on failure.
++static intptr_t GetExecutablePathInto(char* result, size_t result_size) {
++  int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
++  size_t length = result_size;
++  if (sysctl(mib, sizeof(mib) / sizeof(mib[0]), result, &length, nullptr, 0) !=
++      0) {
++    return -1;
++  }
++  return length;
++}
++#endif  // defined(__FreeBSD__)
++
+ const char* Platform::ResolveExecutablePath() {
++#if defined(__FreeBSD__)
++  char path[PATH_MAX + 1];
++  const intptr_t length = GetExecutablePathInto(path, sizeof(path));
++  if (length <= 0) {
++    return nullptr;
++  }
++  char* result = DartUtils::ScopedCString(length);
++  memmove(result, path, length);
++  return result;
++#else
+   return File::ReadLink("/proc/self/exe");
++#endif
+ }
+ 
+ intptr_t Platform::ResolveExecutablePathInto(char* result, size_t result_size) {
++#if defined(__FreeBSD__)
++  return GetExecutablePathInto(result, result_size);
++#else
+   return File::ReadLinkInto("/proc/self/exe", result, result_size);
++#endif
+ }
+ 
+ void Platform::SetProcessName(const char* name) {
+diff --git a/runtime/bin/process_linux.cc b/runtime/bin/process_linux.cc
+index ca48fcee..2eca4e4a 100644
+--- a/runtime/bin/process_linux.cc
++++ b/runtime/bin/process_linux.cc
+@@ -17,6 +17,11 @@
+ #include <sys/wait.h>      // NOLINT
+ #include <unistd.h>        // NOLINT
+ 
++#if defined(__FreeBSD__)
++#include <sys/sysctl.h>  // NOLINT
++#include <sys/user.h>    // NOLINT
++#endif
++
+ #include "bin/dartutils.h"
+ #include "bin/directory.h"
+ #include "bin/fdutils.h"
+@@ -270,6 +275,17 @@ static bool PathInNamespace(char* realpath,
+   if (fd == -1) {
+     return false;
+   }
++#if defined(__FreeBSD__)
++  // No /proc/self/fd on FreeBSD; F_KINFO reports the path of an open file.
++  struct kinfo_file info = {};
++  info.kf_structsize = sizeof(info);
++  if (fcntl(fd, F_KINFO, &info) != 0) {
++    FDUtils::SaveErrorAndClose(fd);
++    return false;
++  }
++  strncpy(realpath, info.kf_path, realpath_size);
++  realpath[realpath_size - 1] = '\0';
++#else
+   char procpath[PATH_MAX];
+   snprintf(procpath, PATH_MAX, "/proc/self/fd/%d", fd);
+   const intptr_t length =
+@@ -279,6 +295,7 @@ static bool PathInNamespace(char* realpath,
+     return false;
+   }
+   realpath[length] = '\0';
++#endif
+   FDUtils::SaveErrorAndClose(fd);
+   return true;
+ }
+@@ -967,13 +984,25 @@ intptr_t Process::CurrentProcessId() {
+   return static_cast<intptr_t>(getpid());
+ }
+ 
++#if !defined(__FreeBSD__)
+ static void SaveErrorAndClose(FILE* file) {
+   int actual_errno = errno;
+   fclose(file);
+   errno = actual_errno;
+ }
++#endif
+ 
+ int64_t Process::CurrentRSS() {
++#if defined(__FreeBSD__)
++  struct kinfo_proc info;
++  size_t size = sizeof(info);
++  int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
++  if (sysctl(mib, sizeof(mib) / sizeof(mib[0]), &info, &size, nullptr, 0) !=
++      0) {
++    return -1;
++  }
++  return static_cast<int64_t>(info.ki_rssize) * getpagesize();
++#else
+   // The second value in /proc/self/statm is the current RSS in pages.
+   // It is not possible to use getrusage() because the interested fields are not
+   // implemented by the linux kernel.
+@@ -989,6 +1018,7 @@ int64_t Process::CurrentRSS() {
+   }
+   fclose(statm);
+   return current_rss_pages * getpagesize();
++#endif
+ }
+ 
+ int64_t Process::MaxRSS() {
+diff --git a/runtime/vm/os_linux.cc b/runtime/vm/os_linux.cc
+index 310728a1..14cdc119 100644
+--- a/runtime/vm/os_linux.cc
++++ b/runtime/vm/os_linux.cc
+@@ -24,6 +24,8 @@
+ 
+ #if defined(__FreeBSD__)
+ #include <pthread_np.h>  // NOLINT
++#include <sys/sysctl.h>  // NOLINT
++#include <sys/user.h>    // NOLINT
+ #endif
+ 
+ #include "platform/largefile.h"
+@@ -553,6 +555,17 @@ intptr_t OS::ActivationFrameAlignment() {
+ }
+ 
+ uintptr_t OS::CurrentRSS() {
++#if defined(__FreeBSD__)
++  // FreeBSD does not mount procfs by default; ask the kernel instead.
++  struct kinfo_proc info;
++  size_t size = sizeof(info);
++  int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
++  if (sysctl(mib, sizeof(mib) / sizeof(mib[0]), &info, &size, nullptr, 0) !=
++      0) {
++    return 0;
++  }
++  return static_cast<uintptr_t>(info.ki_rssize) * getpagesize();
++#else
+   // The second value in /proc/self/statm is the current RSS in pages.
+   // It is not possible to use getrusage() because the interested fields are not
+   // implemented by the linux kernel.
+@@ -567,6 +580,7 @@ uintptr_t OS::CurrentRSS() {
+     return 0;
+   }
+   return current_rss_pages * getpagesize();
++#endif
+ }
+ 
+ bool OS::SafeReadMemory(void* address,
+-- 
+2.54.0
+

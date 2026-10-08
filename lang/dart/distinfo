@@ -1,0 +1,5 @@
+TIMESTAMP = 1791431633
+SHA256 (dart/dart-sdk-3.13.5-src.tar.xz) = 5ab0eef9a7175536b1f9086c293958444de90ebd1211e2b8ee853f166a9c2644
+SIZE (dart/dart-sdk-3.13.5-src.tar.xz) = 195469796
+SHA256 (dart/dart-sdk-3.13.5-bootstrap-freebsd15-amd64.tar.xz) = 03a725efe14d5a95c7848aabd6357d0d2f5ecdb69f2c46ef254094605db43d2e
+SIZE (dart/dart-sdk-3.13.5-bootstrap-freebsd15-amd64.tar.xz) = 151420916

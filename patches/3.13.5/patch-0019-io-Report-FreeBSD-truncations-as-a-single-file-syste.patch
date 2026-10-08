@@ -1,0 +1,43 @@
+From 6748265d11f842b75c7d7c865f991a06a89c54ed Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 21:24:43 -0400
+Subject: [PATCH 19/25] [io] Report FreeBSD truncations as a single file system
+ event
+
+Where Linux reports a single IN_MODIFY, for example when a file is
+truncated, FreeBSD reports IN_ATTRIB followed by IN_MODIFY. The first
+event surfaced as a FileSystemModifyEvent with contentChanged == false.
+Merge the pair into one event when they arrive together.
+---
+ runtime/bin/file_system_watcher_linux.cc | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/runtime/bin/file_system_watcher_linux.cc b/runtime/bin/file_system_watcher_linux.cc
+index 5847ed5a..d69a242c 100644
+--- a/runtime/bin/file_system_watcher_linux.cc
++++ b/runtime/bin/file_system_watcher_linux.cc
+@@ -123,6 +123,21 @@ Dart_Handle FileSystemWatcher::ReadEvents(intptr_t id, intptr_t path_id) {
+     if ((e->mask & IN_IGNORED) == 0) {
+       Dart_Handle event = Dart_NewList(kEventNumElements);
+       int mask = InotifyEventToMask(e);
++#if defined(__FreeBSD__)
++      // Where Linux reports a single IN_MODIFY (e.g. for a truncate), FreeBSD
++      // reports IN_ATTRIB followed by IN_MODIFY. Report them as one event.
++      const intptr_t next_offset = offset + kEventSize + e->len;
++      if ((e->mask & IN_ATTRIB) != 0 && next_offset < bytes) {
++        struct inotify_event* next =
++            reinterpret_cast<struct inotify_event*>(buffer + next_offset);
++        if ((next->mask & IN_MODIFY) != 0 && next->wd == e->wd &&
++            next->len == e->len &&
++            (e->len == 0 || strcmp(next->name, e->name) == 0)) {
++          mask |= InotifyEventToMask(next);
++          offset = next_offset;
++        }
++      }
++#endif
+       Dart_ListSetAt(event, kEventFlagsIndex, Dart_NewInteger(mask));
+       Dart_ListSetAt(event, kEventCookieIndex, Dart_NewInteger(e->cookie));
+       if (e->len > 0) {
+-- 
+2.54.0
+

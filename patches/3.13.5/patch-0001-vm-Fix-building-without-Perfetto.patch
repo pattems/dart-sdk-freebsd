@@ -1,0 +1,86 @@
+From 9a846afec40e27f40044e0440ec205ad80222fbb Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Tue, 6 Oct 2026 00:19:14 -0400
+Subject: [PATCH 01/25] [vm] Fix building without Perfetto
+
+Building with dart_support_perfetto = false failed in two places:
+
+* Profiler::IsolateShutdown() and Profiler::IsolateGroupShutdown() were
+  only defined with SUPPORT_PERFETTO, but isolate.cc calls them whenever
+  DART_INCLUDE_PROFILER is defined, which includes every non-PRODUCT
+  build. Define them whenever the profiler is included and only guard
+  the part that streams samples to the Perfetto timeline.
+* run_vm_tests depended on //third_party/perfetto:libprotozero
+  unconditionally for timeline_test, which only uses it with
+  SUPPORT_PERFETTO. Only add the dependency when Perfetto is supported.
+---
+ runtime/bin/BUILD.gn   | 12 +++++++-----
+ runtime/vm/profiler.cc |  8 ++++++--
+ 2 files changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/runtime/bin/BUILD.gn b/runtime/bin/BUILD.gn
+index ecff06a6..cd51140c 100644
+--- a/runtime/bin/BUILD.gn
++++ b/runtime/bin/BUILD.gn
+@@ -1122,10 +1122,10 @@ source_set("run_vm_tests_set") {
+     configs += [ "..:dart_precompiler_config" ]
+   }
+ 
+-  deps = [
+-    "//third_party/boringssl",  # for secure_socket_utils_test
+-    "//third_party/perfetto:libprotozero",  # for timeline_test
+-  ]
++  deps = [ "//third_party/boringssl" ]  # for secure_socket_utils_test
++  if (dart_support_perfetto) {
++    deps += [ "//third_party/perfetto:libprotozero" ]  # for timeline_test
++  }
+ 
+   if (is_fuchsia) {
+     deps += [
+@@ -1187,9 +1187,11 @@ executable("run_vm_tests") {
+     ":run_vm_tests_set",
+     "..:libdart_precompiler_testing",
+     "//third_party/boringssl",  # for secure_socket_utils_test
+-    "//third_party/perfetto:libprotozero",  # for timeline_test
+     "//third_party/zlib",
+   ]
++  if (dart_support_perfetto) {
++    deps += [ "//third_party/perfetto:libprotozero" ]  # for timeline_test
++  }
+ 
+   if (is_win) {
+     libs = [
+diff --git a/runtime/vm/profiler.cc b/runtime/vm/profiler.cc
+index 02619f97..01ccc1ba 100644
+--- a/runtime/vm/profiler.cc
++++ b/runtime/vm/profiler.cc
+@@ -2081,20 +2081,24 @@ void SampleBlockProcessor::Shutdown() {
+   processor_thread_id_ = OSThread::kInvalidThreadJoinId;
+   ASSERT(!thread_running_);
+ }
++#endif  // defined(SUPPORT_TIMELINE) && defined(SUPPORT_PERFETTO)
+ 
++// Isolate.cc calls these whenever the profiler is included, which does not
++// require Perfetto support.
+ void Profiler::IsolateShutdown(Isolate* isolate) {
+   FlushSampleBlocks(isolate);
+   NOT_IN_PRECOMPILED(Timeline::DrainCompletedSampleBlocksIntoRecorder(isolate));
+ }
+ 
+ void Profiler::IsolateGroupShutdown(IsolateGroup* isolate_group) {
+-#if defined(SUPPORT_TIMELINE)
++#if defined(SUPPORT_TIMELINE) && defined(SUPPORT_PERFETTO)
+   if (config_.enabled && config_.stream_to_timeline) {
+     Timeline::NotifyAboutIsolateGroupShutdown(isolate_group);
+   }
+-#endif  // defined(SUPPORT_TIMELINE)
++#endif  // defined(SUPPORT_TIMELINE) && defined(SUPPORT_PERFETTO)
+ }
+ 
++#if defined(SUPPORT_TIMELINE) && defined(SUPPORT_PERFETTO)
+ void SampleBlockProcessor::ThreadMain(uword parameters) {
+   ASSERT(initialized_);
+   {
+-- 
+2.54.0
+

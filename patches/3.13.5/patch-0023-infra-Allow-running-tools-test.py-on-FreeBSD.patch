@@ -1,0 +1,28 @@
+From cf34230e1afa08e4c78535efef5c81e157aa63d0 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 20:20:00 -0400
+Subject: [PATCH 23/25] [infra] Allow running tools/test.py on FreeBSD
+
+FileDescriptorLimitIncreaser() asserted that the host is Linux, macOS or
+Windows. FreeBSD's default descriptor limit is high enough, so treat it
+like Linux.
+---
+ tools/utils.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/utils.py b/tools/utils.py
+index 50a82f6e..69b5e706 100644
+--- a/tools/utils.py
++++ b/tools/utils.py
+@@ -1001,7 +1001,7 @@ def FileDescriptorLimitIncreaser():
+     if osname == 'macos':
+         return IncreasedNumberOfFileDescriptors(nofiles=10000)
+ 
+-    assert osname in ('linux', 'win32')
++    assert osname in ('linux', 'freebsd', 'win32')
+     # We don't have support for MacOS yet.
+     return NooptContextManager()
+ 
+-- 
+2.54.0
+

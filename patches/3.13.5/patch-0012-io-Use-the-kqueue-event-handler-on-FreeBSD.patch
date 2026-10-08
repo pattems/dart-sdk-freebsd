@@ -1,0 +1,152 @@
+From 9fef582b0cb35ce0343e2c503c109946c752a6b5 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Tue, 6 Oct 2026 00:19:16 -0400
+Subject: [PATCH 12/25] [io] Use the kqueue event handler on FreeBSD
+
+FreeBSD has no epoll. The macOS event handler only relies on kqueue,
+which FreeBSD also provides, so use it there, with two differences:
+
+* FreeBSD uses the Linux FDUtils, whose SetCloseOnExec() deliberately
+  fails because descriptors should be created close-on-exec. Do that
+  with pipe2() and kqueue1(), which FreeBSD has and macOS lacks.
+* FreeBSD accepts kqueue filters on character devices such as /dev/null
+  but never reports them as ready, so reading stdin redirected from
+  /dev/null hung forever. macOS rejects such descriptors in kevent(), and
+  the event handler then reports them as closed. Handle character
+  devices that are not terminals the same way on FreeBSD.
+---
+ runtime/bin/eventhandler.h        |  6 ++++--
+ runtime/bin/eventhandler_linux.cc |  6 ++++--
+ runtime/bin/eventhandler_macos.cc | 30 ++++++++++++++++++++++++++++--
+ 3 files changed, 36 insertions(+), 6 deletions(-)
+
+diff --git a/runtime/bin/eventhandler.h b/runtime/bin/eventhandler.h
+index 7da269ca..570f69b8 100644
+--- a/runtime/bin/eventhandler.h
++++ b/runtime/bin/eventhandler.h
+@@ -596,9 +596,11 @@ class DescriptorInfoMultipleMixin : public DI {
+ // The event handler delegation class is OS specific.
+ #if defined(DART_HOST_OS_FUCHSIA)
+ #include "bin/eventhandler_fuchsia.h"
+-#elif defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#elif (defined(DART_HOST_OS_LINUX) && !defined(__FreeBSD__)) ||               \
++    defined(DART_HOST_OS_ANDROID)
+ #include "bin/eventhandler_linux.h"
+-#elif defined(DART_HOST_OS_MACOS)
++#elif defined(DART_HOST_OS_MACOS) || defined(__FreeBSD__)
++// FreeBSD has no epoll; it shares the kqueue based implementation.
+ #include "bin/eventhandler_macos.h"
+ #elif defined(DART_HOST_OS_WINDOWS)
+ #include "bin/eventhandler_win.h"
+diff --git a/runtime/bin/eventhandler_linux.cc b/runtime/bin/eventhandler_linux.cc
+index dd3aaa24..4e963c1b 100644
+--- a/runtime/bin/eventhandler_linux.cc
++++ b/runtime/bin/eventhandler_linux.cc
+@@ -3,7 +3,8 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if (defined(DART_HOST_OS_LINUX) && !defined(__FreeBSD__)) ||               \
++    defined(DART_HOST_OS_ANDROID)
+ 
+ #include "bin/eventhandler.h"
+ #include "bin/eventhandler_linux.h"
+@@ -430,4 +431,5 @@ uint32_t EventHandlerImplementation::GetHashmapHashFromFd(intptr_t fd) {
+ }  // namespace bin
+ }  // namespace dart
+ 
+-#endif  // defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#endif  // (defined(DART_HOST_OS_LINUX) && !defined(__FreeBSD__)) ||
++        // defined(DART_HOST_OS_ANDROID)
+diff --git a/runtime/bin/eventhandler_macos.cc b/runtime/bin/eventhandler_macos.cc
+index 1397d294..13668065 100644
+--- a/runtime/bin/eventhandler_macos.cc
++++ b/runtime/bin/eventhandler_macos.cc
+@@ -3,7 +3,7 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_MACOS)
++#if defined(DART_HOST_OS_MACOS) || defined(__FreeBSD__)
+ 
+ #include "bin/eventhandler.h"
+ #include "bin/eventhandler_macos.h"
+@@ -14,6 +14,7 @@
+ #include <stdio.h>      // NOLINT
+ #include <string.h>     // NOLINT
+ #include <sys/event.h>  // NOLINT
++#include <sys/stat.h>   // NOLINT
+ #include <unistd.h>     // NOLINT
+ 
+ #include "bin/dartutils.h"
+@@ -78,6 +79,17 @@ static void AddToKqueue(intptr_t kqueue_fd_, DescriptorInfo* di) {
+   }
+   ASSERT(changes > 0);
+   ASSERT(changes <= kMaxChanges);
++#if defined(__FreeBSD__)
++  // FreeBSD accepts filters on character devices such as /dev/null, but
++  // never reports them as ready, so reading from them would hang. macOS
++  // rejects them instead; handle character devices other than terminals the
++  // same way.
++  struct stat st;
++  if (fstat(di->fd(), &st) == 0 && S_ISCHR(st.st_mode) && !isatty(di->fd())) {
++    di->NotifyAllDartPorts(1 << kCloseEvent);
++    return;
++  }
++#endif
+   int status = NO_RETRY_EXPECTED(
+       kevent(kqueue_fd_, events, changes, nullptr, 0, nullptr));
+   if (status == -1) {
+@@ -96,28 +108,42 @@ static void AddToKqueue(intptr_t kqueue_fd_, DescriptorInfo* di) {
+ EventHandlerImplementation::EventHandlerImplementation()
+     : socket_map_(&SimpleHashMap::SamePointerValue, 16) {
+   intptr_t result;
++#if defined(__FreeBSD__)
++  // FreeBSD uses the Linux FDUtils, which expect descriptors to be created
++  // with O_CLOEXEC rather than having it set afterwards.
++  result = NO_RETRY_EXPECTED(pipe2(interrupt_fds_, O_CLOEXEC));
++#else
+   result = NO_RETRY_EXPECTED(pipe(interrupt_fds_));
++#endif
+   if (result != 0) {
+     FATAL("Pipe creation failed");
+   }
+   if (!FDUtils::SetNonBlocking(interrupt_fds_[0])) {
+     FATAL("Failed to set pipe fd non-blocking\n");
+   }
++#if !defined(__FreeBSD__)
+   if (!FDUtils::SetCloseOnExec(interrupt_fds_[0])) {
+     FATAL("Failed to set pipe fd close on exec\n");
+   }
+   if (!FDUtils::SetCloseOnExec(interrupt_fds_[1])) {
+     FATAL("Failed to set pipe fd close on exec\n");
+   }
++#endif
+   shutdown_ = false;
+ 
++#if defined(__FreeBSD__)
++  kqueue_fd_ = NO_RETRY_EXPECTED(kqueue1(O_CLOEXEC));
++#else
+   kqueue_fd_ = NO_RETRY_EXPECTED(kqueue());
++#endif
+   if (kqueue_fd_ == -1) {
+     FATAL("Failed creating kqueue");
+   }
++#if !defined(__FreeBSD__)
+   if (!FDUtils::SetCloseOnExec(kqueue_fd_)) {
+     FATAL("Failed to set kqueue fd close on exec\n");
+   }
++#endif
+   // Register the interrupt_fd with the kqueue.
+   struct kevent event;
+   EV_SET(&event, interrupt_fds_[0], EVFILT_READ, EV_ADD, 0, 0, nullptr);
+@@ -501,4 +527,4 @@ uint32_t EventHandlerImplementation::GetHashmapHashFromFd(intptr_t fd) {
+ }  // namespace bin
+ }  // namespace dart
+ 
+-#endif  // defined(DART_HOST_OS_MACOS)
++#endif  // defined(DART_HOST_OS_MACOS) || defined(__FreeBSD__)
+-- 
+2.54.0
+

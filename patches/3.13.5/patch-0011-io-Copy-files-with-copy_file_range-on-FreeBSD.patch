@@ -1,0 +1,57 @@
+From a13604e1df64a8bce374e6bb7cc31ef603e612ca Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 18:12:30 -0400
+Subject: [PATCH 11/25] [io] Copy files with copy_file_range() on FreeBSD
+
+FreeBSD's sendfile() can only write to sockets, so File::Copy uses
+copy_file_range() there instead. It fails with the same errno values
+(EINVAL, ESPIPE, ...) as sendfile() does on Linux, so the existing
+read/write fallback still applies. Like sendfile64() since
+https://github.com/dart-lang/sdk/issues/64473, it is retried on EINTR
+rather than aborting the VM when a signal arrives during the copy.
+---
+ runtime/bin/file_linux.cc | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/runtime/bin/file_linux.cc b/runtime/bin/file_linux.cc
+index 4d6de71a..26397ff3 100644
+--- a/runtime/bin/file_linux.cc
++++ b/runtime/bin/file_linux.cc
+@@ -11,12 +11,15 @@
+ #include <fcntl.h>         // NOLINT
+ #include <libgen.h>        // NOLINT
+ #include <sys/mman.h>      // NOLINT
+-#include <sys/sendfile.h>  // NOLINT
+ #include <sys/stat.h>      // NOLINT
+ #include <sys/types.h>     // NOLINT
+ #include <unistd.h>        // NOLINT
+ #include <utime.h>         // NOLINT
+ 
++#if !defined(__FreeBSD__)
++#include <sys/sendfile.h>  // NOLINT
++#endif
++
+ #include "bin/builtin.h"
+ #include "bin/fdutils.h"
+ #include "bin/namespace.h"
+@@ -490,9 +493,17 @@ bool File::Copy(Namespace* namespc,
+   intptr_t result = 1;
+   while (result > 0) {
+     // Loop to ensure we copy everything, and not only up to 2GB.
++#if defined(__FreeBSD__)
++    // FreeBSD's sendfile() only writes to sockets.
++    off_t in_offset = offset;
++    result = TEMP_FAILURE_RETRY(
++        copy_file_range(old_fd, &in_offset, new_fd, nullptr, kMaxUint32, 0));
++    offset = in_offset;
++#else
+     // sendfile64 can fail with EINTR if no data was written yet.
+     result =
+         TEMP_FAILURE_RETRY(sendfile64(new_fd, old_fd, &offset, kMaxUint32));
++#endif
+   }
+   // From sendfile man pages:
+   //   Applications may wish to fall back to read(2)/write(2) in the case
+-- 
+2.54.0
+

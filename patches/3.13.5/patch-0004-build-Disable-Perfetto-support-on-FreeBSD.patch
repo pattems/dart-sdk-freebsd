@@ -1,0 +1,39 @@
+From 8e5b356b8ef8af9c83f7b11c4dc3255923232023 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 18:04:55 -0400
+Subject: [PATCH 04/25] [build] Disable Perfetto support on FreeBSD
+
+Perfetto rejects FreeBSD in perfetto/base/build_config.h ("OS not
+supported"), so default dart_support_perfetto to false there, as is
+already done for watchOS.
+---
+ runtime/runtime_args.gni | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/runtime/runtime_args.gni b/runtime/runtime_args.gni
+index d465b34f..3d0d81a2 100644
+--- a/runtime/runtime_args.gni
++++ b/runtime/runtime_args.gni
+@@ -80,7 +80,8 @@ declare_args() {
+   # Whether features that depend on Perfetto should be built. We need
+   # to define this to allow excluding code that depends on Perfetto
+   # from being built on platforms which have a problem linking in the
+-  # Perfetto library, e.g. watchOS.
++  # Perfetto library, e.g. watchOS. Perfetto also does not support FreeBSD
++  # (perfetto/base/build_config.h).
+   #
+   # We also exclude perfetto support when producing builds which set
+   # dart_runtime_mode to release e.g. Dart Product builds or Flutter
+@@ -93,7 +94,8 @@ declare_args() {
+   # is_watchos may be undefined when Dart SDK is built from the Flutter
+   # engine tree.
+   dart_support_perfetto =
+-      !((defined(is_watchos) && is_watchos) || dart_runtime_mode == "release")
++      !((defined(is_watchos) && is_watchos) || current_os == "freebsd" ||
++        dart_runtime_mode == "release")
+ 
+   # The analyze_snapshot tool is only supported on 64 bit AOT builds.
+   build_analyze_snapshot =
+-- 
+2.54.0
+

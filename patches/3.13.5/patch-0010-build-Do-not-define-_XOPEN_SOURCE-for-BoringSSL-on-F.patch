@@ -1,0 +1,33 @@
+From 2bc9363642d67231cf6aba693c3e549196b3a7b6 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 18:11:40 -0400
+Subject: [PATCH 10/25] [build] Do not define _XOPEN_SOURCE for BoringSSL on
+ FreeBSD
+
+On FreeBSD _XOPEN_SOURCE=700 hides BSD interfaces that BoringSSL uses
+(getentropy, MAP_ANONYMOUS, INHERIT_ZERO). BoringSSL's own CMake
+build only sets it on Linux for this reason, see
+https://crbug.com/boringssl/471.
+---
+ third_party/boringssl/BUILD.gn | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/third_party/boringssl/BUILD.gn b/third_party/boringssl/BUILD.gn
+index 3c8b0667..192e142f 100644
+--- a/third_party/boringssl/BUILD.gn
++++ b/third_party/boringssl/BUILD.gn
+@@ -32,7 +32,10 @@ config("internal_config") {
+     "OPENSSL_SMALL",
+     "OPENSSL_STATIC_ARMCAP",
+   ]
+-  if (is_posix) {
++  # Like BoringSSL's CMake build, don't set this on FreeBSD, where it hides
++  # interfaces BoringSSL uses (getentropy, MAP_ANONYMOUS, INHERIT_ZERO). See
++  # https://crbug.com/boringssl/471.
++  if (is_posix && current_os != "freebsd") {
+     defines += [ "_XOPEN_SOURCE=700" ]
+   }
+ }
+-- 
+2.54.0
+

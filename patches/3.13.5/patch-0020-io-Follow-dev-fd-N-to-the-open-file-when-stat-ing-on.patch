@@ -1,0 +1,94 @@
+From 7ecdc806be7402f9c97f87cb1d6b1c1bd006a739 Mon Sep 17 00:00:00 2001
+From: Pattems <patrick@crandol.com>
+Date: Mon, 5 Oct 2026 21:27:01 -0400
+Subject: [PATCH 20/25] [io] Follow /dev/fd/N to the open file when stat-ing on
+ FreeBSD
+
+On Linux (/proc/self/fd links) and macOS, stat-ing /dev/fd/N reports
+the open file, so e.g. a pipe passed with bash process substitution is
+recognized as a pipe and can be read or copied. On FreeBSD, /dev/fd/N
+(devfs or fdescfs) is a character device, which dart:io reports as
+notFound. Stat the descriptor itself for such paths in File::GetType(),
+File::Stat() and File::Copy().
+---
+ runtime/bin/file_linux.cc | 36 +++++++++++++++++++++++++++++++++---
+ 1 file changed, 33 insertions(+), 3 deletions(-)
+
+diff --git a/runtime/bin/file_linux.cc b/runtime/bin/file_linux.cc
+index 26397ff3..52d9f688 100644
+--- a/runtime/bin/file_linux.cc
++++ b/runtime/bin/file_linux.cc
+@@ -10,6 +10,7 @@
+ #include <errno.h>         // NOLINT
+ #include <fcntl.h>         // NOLINT
+ #include <libgen.h>        // NOLINT
++#include <stdio.h>         // NOLINT
+ #include <sys/mman.h>      // NOLINT
+ #include <sys/stat.h>      // NOLINT
+ #include <sys/types.h>     // NOLINT
+@@ -363,6 +364,35 @@ bool File::CreatePipe(Namespace* namespc, File** readPipe, File** writePipe) {
+   return true;
+ }
+ 
++#if defined(__FreeBSD__)
++// On FreeBSD, /dev/fd/N (from devfs or fdescfs) is a character device, while
++// on Linux and macOS following it reaches the open file itself, e.g. a pipe.
++// Stat the descriptor for such paths to get the same result.
++static bool StatDevFd(const char* path, struct stat64* st, int* result) {
++  int fd;
++  char trailing;
++  if (sscanf(path, "/dev/fd/%d%c", &fd, &trailing) != 1 || fd < 0) {
++    return false;
++  }
++  *result = TEMP_FAILURE_RETRY(fstat64(fd, st));
++  return true;
++}
++#endif  // defined(__FreeBSD__)
++
++// Like fstatat64(dirfd, path, st, 0), following /dev/fd/N on FreeBSD.
++static int StatFollowingLinks(const char* name,
++                              int dirfd,
++                              const char* path,
++                              struct stat64* st) {
++#if defined(__FreeBSD__)
++  int result;
++  if (StatDevFd(name, st, &result)) {
++    return result;
++  }
++#endif
++  return TEMP_FAILURE_RETRY(fstatat64(dirfd, path, st, 0));
++}
++
+ File::Type File::GetType(Namespace* namespc,
+                          const char* name,
+                          bool follow_links) {
+@@ -371,7 +401,7 @@ File::Type File::GetType(Namespace* namespc,
+   int stat_success;
+   if (follow_links) {
+     stat_success =
+-        TEMP_FAILURE_RETRY(fstatat64(ns.fd(), ns.path(), &entry_info, 0));
++        StatFollowingLinks(name, ns.fd(), ns.path(), &entry_info);
+   } else {
+     stat_success = TEMP_FAILURE_RETRY(
+         fstatat64(ns.fd(), ns.path(), &entry_info, AT_SYMLINK_NOFOLLOW));
+@@ -473,7 +503,7 @@ bool File::Copy(Namespace* namespc,
+   }
+   NamespaceScope oldns(namespc, old_path);
+   struct stat64 st;
+-  if (TEMP_FAILURE_RETRY(fstatat64(oldns.fd(), oldns.path(), &st, 0)) != 0) {
++  if (StatFollowingLinks(old_path, oldns.fd(), oldns.path(), &st) != 0) {
+     return false;
+   }
+   const int old_fd = TEMP_FAILURE_RETRY(
+@@ -573,7 +603,7 @@ static void MicrosecondsToTimespec(int64_t micros, struct timespec* t) {
+ void File::Stat(Namespace* namespc, const char* name, int64_t* data) {
+   NamespaceScope ns(namespc, name);
+   struct stat64 st;
+-  if (TEMP_FAILURE_RETRY(fstatat64(ns.fd(), ns.path(), &st, 0)) == 0) {
++  if (StatFollowingLinks(name, ns.fd(), ns.path(), &st) == 0) {
+     if (S_ISREG(st.st_mode)) {
+       data[kType] = kIsFile;
+     } else if (S_ISDIR(st.st_mode)) {
+-- 
+2.54.0
+
