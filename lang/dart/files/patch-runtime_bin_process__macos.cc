@@ -1,3 +1,7 @@
+Move SignalMap() unchanged into bin/process_signal_map.h (series 0016)
+so the Linux code can use it on FreeBSD (series 0017). The header is
+files/process_signal_map.h. No change on macOS.
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/process_macos.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/process_macos.cc
 @@ -24,6 +24,7 @@

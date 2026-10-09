@@ -1,3 +1,6 @@
+Detect ARMv8 CRC32 and PMULL with elf_aux_info(AT_HWCAP) on
+FreeBSD/aarch64 instead of the Linux-only <asm/hwcap.h> (series 1002).
+For Chromium's zlib; not submitted upstream yet.
 --- third_party/zlib/cpu_features.c.orig	2026-09-29 08:00:52 UTC
 +++ third_party/zlib/cpu_features.c
 @@ -39,7 +39,8 @@ int ZLIB_INTERNAL riscv_cpu_enable_vclmul = 0;

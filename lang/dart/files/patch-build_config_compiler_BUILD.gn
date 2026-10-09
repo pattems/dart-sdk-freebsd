@@ -1,3 +1,7 @@
+Build FreeBSD as a Linux variant in GN (series 0003): pass a FreeBSD
+--target triple, and don't depend on the CIPD clang's toolchain stamp,
+since FreeBSD uses the base system clang.
+FreeBSD-specific, not submitted upstream yet.
 --- build/config/compiler/BUILD.gn.orig	2026-09-29 08:00:52 UTC
 +++ build/config/compiler/BUILD.gn
 @@ -315,7 +315,15 @@ config("compiler") {

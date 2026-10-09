@@ -1,3 +1,8 @@
+Use pthread_getthreadid_np() and pthread_attr_get_np(), convert the
+pointer-sized pthread_t with reinterpret_cast, and reject
+--worker_thread_priority, since setpriority() can't target one thread
+on FreeBSD (series 0007).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/vm/os_thread_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/vm/os_thread_linux.cc
 @@ -14,6 +14,10 @@

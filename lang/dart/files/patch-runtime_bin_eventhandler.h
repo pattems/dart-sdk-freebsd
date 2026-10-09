@@ -1,3 +1,6 @@
+FreeBSD has no epoll: use the kqueue event handler that macOS uses
+(series 0012). See patch-runtime_bin_eventhandler__macos.cc.
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/eventhandler.h.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/eventhandler.h
 @@ -596,9 +596,11 @@ class DescriptorInfoMultipleMixin : public DI {

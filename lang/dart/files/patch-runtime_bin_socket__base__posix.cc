@@ -1,3 +1,7 @@
+Treat any nonzero boolean socket option value as enabled (series 0002).
+FreeBSD and macOS return the option's flag bit, not 1, so
+broadcastEnabled and similar read back as false.
+Upstream: submitted as dart-lang/sdk#64551 (fixes #50171).
 --- runtime/bin/socket_base_posix.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/socket_base_posix.cc
 @@ -423,7 +423,7 @@ bool SocketBase::GetNoDelay(intptr_t fd, bool* enabled

@@ -1,3 +1,12 @@
+File fixes:
+- Retry sendfile64() on EINTR (series 0000). Backport of upstream
+  765cab96b7b (dart-lang/sdk#64473); drop once a release has it.
+- Use the large-file names from platform/largefile.h (series 0006).
+- Copy files with copy_file_range(), since FreeBSD's sendfile() only
+  writes to sockets (series 0011).
+- Stat the descriptor itself for /dev/fd/N, which is a character device
+  on FreeBSD (series 0020).
+Except for the backport: FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/file_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/file_linux.cc
 @@ -10,16 +10,21 @@

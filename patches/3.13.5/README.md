@@ -1,6 +1,6 @@
 # Patches for Dart SDK 3.13.5
 
-The port doesn't use these files. It applies the `make makepatch` patches in [`lang/dart/files/`](../../lang/dart/files/), one per patched source file.
+The port doesn't use these files. It applies the `make makepatch` patches in [`lang/dart/files/`](../../lang/dart/files/), one per patched source file, plus the two new files the series adds, which its `post-patch` target copies in. Each patch starts with a short header naming the series commits it comes from and their upstream status.
 
 This folder has the same changes as a `git format-patch` series, for reading and review: one change per commit, each with a commit message explaining it. [`tools/to-makepatch.sh`](../../tools/to-makepatch.sh) generates the port's patches from it. The series applies with `git am` or `patch -p1` from the top of the SDK source tree (the `sdk/` directory of a `gclient` checkout, or the source distfile), in file-name order.
 

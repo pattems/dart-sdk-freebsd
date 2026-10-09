@@ -1,3 +1,6 @@
+Read the CPU model from sysctl hw.model instead of /proc/cpuinfo on
+FreeBSD/aarch64 (series 0015). It is only displayed.
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/vm/cpuinfo_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/vm/cpuinfo_linux.cc
 @@ -5,6 +5,11 @@

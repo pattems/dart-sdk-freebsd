@@ -1,3 +1,6 @@
+Skip the Linux-only prctl(PR_SET_VMA) mapping names on FreeBSD
+(series 0009).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/virtual_memory_posix.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/virtual_memory_posix.cc
 @@ -12,7 +12,8 @@

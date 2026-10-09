@@ -1,3 +1,8 @@
+Socket fixes for FreeBSD:
+- ENONET is Linux-only (series 0005).
+- Set SO_REUSEPORT along with SO_REUSEADDR on UDP sockets, so several
+  sockets can share a port as on Linux (series 0018).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/socket_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/socket_linux.cc
 @@ -132,6 +132,12 @@ intptr_t Socket::CreateBindDatagram(const RawAddr& add

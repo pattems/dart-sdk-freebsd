@@ -1,3 +1,7 @@
+Fix building without Perfetto (series 0001): define
+Profiler::IsolateShutdown() and IsolateGroupShutdown() whenever the
+profiler is built, not only with Perfetto.
+Upstream: landed in dart-lang/sdk as e4dec8c8967 (#64525), after 3.13.
 --- runtime/vm/profiler.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/vm/profiler.cc
 @@ -2081,20 +2081,24 @@ void SampleBlockProcessor::Shutdown() {

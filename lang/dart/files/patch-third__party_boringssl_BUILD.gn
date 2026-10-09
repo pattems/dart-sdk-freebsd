@@ -1,3 +1,7 @@
+Don't define _XOPEN_SOURCE for BoringSSL on FreeBSD, where it hides
+getentropy() and MAP_ANONYMOUS (series 0010). BoringSSL's own CMake
+build only sets it on Linux, see https://crbug.com/boringssl/471.
+FreeBSD-specific, not submitted upstream yet.
 --- third_party/boringssl/BUILD.gn.orig	2026-09-29 08:00:52 UTC
 +++ third_party/boringssl/BUILD.gn
 @@ -32,7 +32,10 @@ config("internal_config") {

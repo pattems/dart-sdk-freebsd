@@ -1,3 +1,6 @@
+Merge the IN_ATTRIB + IN_MODIFY pair that FreeBSD's inotify reports for
+a truncation into one modify event, as Linux reports it (series 0019).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/file_system_watcher_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/file_system_watcher_linux.cc
 @@ -123,6 +123,21 @@ Dart_Handle FileSystemWatcher::ReadEvents(intptr_t id,

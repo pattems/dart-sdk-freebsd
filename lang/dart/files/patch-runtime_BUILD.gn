@@ -1,3 +1,6 @@
+Build FreeBSD as a Linux variant in GN (series 0003): take the Linux
+branches of the runtime configs for target_os "freebsd".
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/BUILD.gn.orig	2026-09-29 08:00:52 UTC
 +++ runtime/BUILD.gn
 @@ -31,7 +31,7 @@ config("dart_maybe_product_config") {

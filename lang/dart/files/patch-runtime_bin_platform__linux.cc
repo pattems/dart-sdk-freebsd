@@ -1,3 +1,10 @@
+Platform fixes for FreeBSD:
+- No prctl(PR_SET_NAME): name the thread with pthread_setname_np();
+  the BUS_MCEERR_* codes are Linux-only; declare environ, which
+  <unistd.h> doesn't on FreeBSD (series 0009).
+- Executable path from sysctl(KERN_PROC_PATHNAME) instead of
+  /proc/self/exe (series 0013).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/platform_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/platform_linux.cc
 @@ -10,7 +10,6 @@

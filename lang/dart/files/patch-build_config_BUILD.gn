@@ -1,3 +1,6 @@
+Build FreeBSD as a Linux variant in GN (series 0003): use the
+shared-library config for current_os "freebsd" too.
+FreeBSD-specific, not submitted upstream yet.
 --- build/config/BUILD.gn.orig	2026-09-29 08:00:52 UTC
 +++ build/config/BUILD.gn
 @@ -21,7 +21,8 @@ config("shared_library_config") {

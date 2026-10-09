@@ -1,3 +1,7 @@
+Skip the Linux-only prctl(PR_SET_VMA) mapping names, and treat the
+removed MAP_NORESERVE as 0 on FreeBSD, whose mappings never reserve
+swap up front (series 0009).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/vm/virtual_memory_posix.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/vm/virtual_memory_posix.cc
 @@ -15,10 +15,16 @@

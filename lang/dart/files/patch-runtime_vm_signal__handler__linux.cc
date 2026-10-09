@@ -1,3 +1,6 @@
+Read the saved registers from FreeBSD's mcontext_t (mc_rip, mc_rsp,
+... on amd64, mc_gpregs on aarch64) (series 0008).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/vm/signal_handler_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/vm/signal_handler_linux.cc
 @@ -15,10 +15,14 @@ uintptr_t SignalHandler::GetProgramCounter(const mcont

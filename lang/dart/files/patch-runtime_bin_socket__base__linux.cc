@@ -1,3 +1,9 @@
+Socket fixes for FreeBSD:
+- Use the large-file names from platform/largefile.h (series 0006).
+- Join multicast groups with IP_ADD_MEMBERSHIP/ip_mreqn and
+  IPV6_JOIN_GROUP: FreeBSD rejects interface index 0 with
+  MCAST_JOIN_GROUP (series 0018).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/socket_base_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/socket_base_linux.cc
 @@ -21,6 +21,7 @@

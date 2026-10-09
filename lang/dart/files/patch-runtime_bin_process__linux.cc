@@ -1,3 +1,10 @@
+Process fixes for FreeBSD:
+- Use the large-file names from platform/largefile.h (series 0006).
+- Get open-file paths from fcntl(F_KINFO) and the RSS from sysctl,
+  since procfs isn't mounted by default (series 0013).
+- Translate dart:io ProcessSignal numbers (Linux numbering) with
+  SignalMap() from process_signal_map.h, as macOS does (series 0017).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/process_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/process_linux.cc
 @@ -17,13 +17,22 @@

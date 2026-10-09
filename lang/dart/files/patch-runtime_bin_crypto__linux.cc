@@ -1,3 +1,5 @@
+FreeBSD has no __NR_getrandom; call getrandom(2) directly (series 0009).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/crypto_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/crypto_linux.cc
 @@ -9,6 +9,10 @@

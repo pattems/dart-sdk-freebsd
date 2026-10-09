@@ -1,3 +1,10 @@
+Build the kqueue event handler on FreeBSD too (series 0012). It only
+relies on kqueue, so FreeBSD uses it instead of the epoll one, with two
+differences: descriptors are created close-on-exec with pipe2() and
+kqueue1(), and non-tty character devices such as /dev/null are treated
+as closed, as macOS's kevent() does (FreeBSD accepts them but never
+reports them ready, which hung reads from /dev/null). No change on macOS.
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/eventhandler_macos.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/eventhandler_macos.cc
 @@ -3,7 +3,7 @@

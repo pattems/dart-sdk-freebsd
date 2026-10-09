@@ -1,3 +1,6 @@
+Detect ARMv8 CRC32 and PMULL with elf_aux_info(AT_HWCAP) on
+FreeBSD/aarch64 instead of the Linux-only <asm/hwcap.h> (series 1002).
+For Chromium's zlib; not submitted upstream yet.
 --- third_party/zlib/BUILD.gn.orig	2026-09-29 08:00:52 UTC
 +++ third_party/zlib/BUILD.gn
 @@ -123,6 +123,8 @@ if (use_arm_neon_optimizations) {

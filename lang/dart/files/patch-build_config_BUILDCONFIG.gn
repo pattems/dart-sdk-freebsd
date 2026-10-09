@@ -1,3 +1,7 @@
+Build FreeBSD as a Linux variant in GN (series 0003): is_linux and
+is_clang are true for current_os "freebsd", matching the C++ side,
+where __FreeBSD__ already selects DART_HOST_OS_LINUX.
+FreeBSD-specific, not submitted upstream yet.
 --- build/config/BUILDCONFIG.gn.orig	2026-09-29 08:00:52 UTC
 +++ build/config/BUILDCONFIG.gn
 @@ -117,7 +117,8 @@ declare_args() {

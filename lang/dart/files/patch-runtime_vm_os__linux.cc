@@ -1,3 +1,11 @@
+OS fixes for FreeBSD:
+- Use the large-file names from platform/largefile.h (series 0006).
+- Thread ids from pthread_getthreadid_np() (series 0007).
+- Don't redefine ElfW, which FreeBSD's headers provide (series 0009).
+- RSS from sysctl instead of /proc/self/statm (series 0013).
+- OS::SafeReadMemory() through a pipe instead of /proc/self/mem
+  (series 0014).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/vm/os_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/vm/os_linux.cc
 @@ -22,6 +22,13 @@

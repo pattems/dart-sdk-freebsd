@@ -1,3 +1,8 @@
+Build FreeBSD as a Linux variant in GN (series 0003): use the base
+system clang (freebsd_clang_dir, default /usr/bin) instead of the
+prebuilt Linux toolchain from CIPD, skip the CIPD toolchain and sysroot
+stamps, and keep current_os "freebsd" in secondary toolchains.
+FreeBSD-specific, not submitted upstream yet.
 --- build/toolchain/linux/BUILD.gn.orig	2026-09-29 08:00:52 UTC
 +++ build/toolchain/linux/BUILD.gn
 @@ -15,6 +15,11 @@ declare_args() {

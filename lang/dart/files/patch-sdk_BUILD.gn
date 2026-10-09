@@ -1,3 +1,6 @@
+Build FreeBSD as a Linux variant in GN (series 0003): ship
+dart2bytecode in the SDK as on Linux and macOS.
+FreeBSD-specific, not submitted upstream yet.
 --- sdk/BUILD.gn.orig	2026-09-29 08:00:52 UTC
 +++ sdk/BUILD.gn
 @@ -177,7 +177,8 @@ if ((dart_target_arch == "x64" || dart_target_arch == 

@@ -1,3 +1,6 @@
+package:mmap hard-codes Linux's MAP_ANONYMOUS (0x20); FreeBSD's is
+0x1000 (series 0022). Fixes the heap snapshot tool.
+FreeBSD-specific, not submitted upstream yet.
 --- pkg/mmap/lib/src/mmap_impl.dart.orig	2026-09-29 08:00:52 UTC
 +++ pkg/mmap/lib/src/mmap_impl.dart
 @@ -7,6 +7,7 @@ import 'dart:ffi';

@@ -1,3 +1,6 @@
+FreeBSD has no epoll: don't build the epoll event handler there; it
+uses the kqueue one from eventhandler_macos.cc (series 0012).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/eventhandler_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/eventhandler_linux.cc
 @@ -3,7 +3,8 @@

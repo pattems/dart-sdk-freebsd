@@ -1,3 +1,7 @@
+Register the profiler's .sym table under the name dladdr() reports for
+the executable, which on FreeBSD is the resolved path, not argv[0], so
+native frames in crash backtraces are symbolized (series 0021).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/exe_utils.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/exe_utils.cc
 @@ -4,6 +4,10 @@

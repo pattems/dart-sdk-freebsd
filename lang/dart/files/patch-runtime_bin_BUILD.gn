@@ -1,3 +1,6 @@
+Fix building without Perfetto (series 0001): run_vm_tests only needs
+libprotozero when Perfetto is supported.
+Upstream: landed in dart-lang/sdk as e4dec8c8967 (#64525), after 3.13.
 --- runtime/bin/BUILD.gn.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/BUILD.gn
 @@ -1122,10 +1122,10 @@ source_set("run_vm_tests_set") {

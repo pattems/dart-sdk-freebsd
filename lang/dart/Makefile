@@ -81,6 +81,14 @@ SDK_PROGRAMS=	bin/dart bin/dartaotruntime bin/dartvm bin/utils/gen_snapshot \
 post-extract:
 	${MV} ${WRKDIR}/dart-sdk ${WRKSRC}/tools/sdks/dart-sdk
 
+# The patches are generated from a git series written to go upstream
+# (patches/${DISTVERSION} in https://github.com/pattems/dart-sdk-freebsd);
+# "series NNNN" in their headers refers to it. Files the series adds are in
+# ${FILESDIR}.
+post-patch:
+	${CP} ${FILESDIR}/largefile.h ${WRKSRC}/runtime/platform/
+	${CP} ${FILESDIR}/process_signal_map.h ${WRKSRC}/runtime/bin/
+
 do-configure:
 	${MKDIR} ${WRKSRC}/out/release
 	@${RM} ${WRKSRC}/out/release/args.gn

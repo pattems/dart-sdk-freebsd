@@ -1,3 +1,7 @@
+Default dart_support_perfetto to false on FreeBSD (series 0004), because
+the pinned Perfetto doesn't build there. The port turns it back on in
+GN_ARGS, together with the patch-third__party_perfetto_* backport.
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/runtime_args.gni.orig	2026-09-29 08:00:52 UTC
 +++ runtime/runtime_args.gni
 @@ -80,7 +80,8 @@ declare_args() {

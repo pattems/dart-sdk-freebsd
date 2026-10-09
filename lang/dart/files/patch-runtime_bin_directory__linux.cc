@@ -1,3 +1,5 @@
+Use the large-file names from platform/largefile.h (series 0006).
+FreeBSD-specific, not submitted upstream yet.
 --- runtime/bin/directory_linux.cc.orig	2026-09-29 08:00:52 UTC
 +++ runtime/bin/directory_linux.cc
 @@ -22,6 +22,7 @@
