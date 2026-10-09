@@ -13,7 +13,7 @@ WWW=		https://dart.dev/
 LICENSE=	BSD3CLAUSE
 LICENSE_FILE=	${WRKSRC}/LICENSE
 
-ONLY_FOR_ARCHS=	amd64
+ONLY_FOR_ARCHS=	aarch64 amd64
 ONLY_FOR_ARCHS_REASON=	no bootstrap SDK for other architectures yet
 
 BUILD_DEPENDS=	gn:devel/gn
@@ -28,16 +28,18 @@ BINARY_ALIAS=	git=false python3=${PYTHON_CMD}
 # build of the Dart SDK, used to run the Dart parts of the build.
 BOOTSTRAP_VERSION=	3.13.5
 
+DART_ARCH=	${ARCH:S/aarch64/arm64/:S/amd64/x64/}
+
 WRKSRC=		${WRKDIR}/dart-sdk-${DISTVERSION}
 
-# Same arguments as tools/gn.py --mode release --arch x64, except for those
-# that need a git checkout (verify_sdk_hash, dart_version_git_info).
+# Same arguments as tools/gn.py --mode release --arch x64 (or arm64), except
+# for those that need a git checkout (verify_sdk_hash, dart_version_git_info).
 # Perfetto is off by default on FreeBSD; the patch-third__party_perfetto_*
 # files backport Perfetto's FreeBSD support so it can be enabled.
 GN_ARGS=	target_os="freebsd" \
-		host_cpu="x64" \
-		target_cpu="x64" \
-		dart_target_arch="x64" \
+		host_cpu="${DART_ARCH}" \
+		target_cpu="${DART_ARCH}" \
+		dart_target_arch="${DART_ARCH}" \
 		dart_use_compressed_pointers=false \
 		dart_use_crashpad=false \
 		dart_snapshot_kind="app-jit" \
@@ -64,6 +66,12 @@ MAKE_ENV=	HOME=${WRKDIR}
 
 .if ${OSVERSION} < 1405000
 IGNORE=		requires FreeBSD 14.5 or later
+.endif
+
+# Record the bootstrap for every architecture in distinfo.
+.if make(makesum)
+DISTFILES=	dart-sdk-${DISTVERSION}-src${EXTRACT_SUFX} \
+		${ONLY_FOR_ARCHS:@a@dart-sdk-${BOOTSTRAP_VERSION}-bootstrap-freebsd15-${a}${EXTRACT_SUFX}@}
 .endif
 
 SDKDIR=		lib/dart

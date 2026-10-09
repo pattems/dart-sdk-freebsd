@@ -1,6 +1,6 @@
 # The bootstrap SDK
 
-Building the Dart SDK runs Dart programs: the front end, the snapshot generators, `dart2js` and the analyzer are written in Dart. So the build needs a working Dart SDK first, the way `lang/go` and `lang/rust` need a bootstrap compiler. Upstream only publishes SDKs for Linux, macOS and Windows, so the port uses a FreeBSD build of the SDK, published as a release asset here (`dart-sdk-<version>-bootstrap-freebsd15-amd64.tar.xz`). It needs FreeBSD 14.5 or later, because it uses `FBSD_1.8` symbols.
+Building the Dart SDK runs Dart programs: the front end, the snapshot generators, `dart2js` and the analyzer are written in Dart. So the build needs a working Dart SDK first, the way `lang/go` and `lang/rust` need a bootstrap compiler. Upstream only publishes SDKs for Linux, macOS and Windows, so the port uses a FreeBSD build of the SDK, published as a release asset here (`dart-sdk-<version>-bootstrap-freebsd15-<arch>.tar.xz`). It needs FreeBSD 14.5 or later, because it uses `FBSD_1.8` symbols.
 
 Each new bootstrap is built on FreeBSD by the previous one, as described below. (The very first one had to come from Linux; [`initial-bootstrap/`](../initial-bootstrap/) describes how it was made.)
 
@@ -47,3 +47,18 @@ Starting from the published 3.13.5 bootstrap, on FreeBSD 15.1 amd64 with the Lin
 | Build `3.14.0-211.1.beta` | the `3.14.0-75.0.dev` SDK from the previous step | `create_sdk` succeeds; `dart compile exe` produces working FreeBSD executables |
 
 All 26 patches applied to both tags. On `3.14.0-211.1.beta`, two needed small conflict fixes for nearby upstream changes: a new `#include` next to ours, and upstream's new MemorySanitizer wrappers for the `stat` functions, which the `/dev/fd` change now calls.
+
+## aarch64
+
+The 3.13.5 aarch64 bootstrap was cross-compiled on FreeBSD 15.1 amd64, not built natively. It's the port's source and patches, built with the amd64 bootstrap as the host SDK and these changes to the port's GN arguments:
+
+```
+host_cpu = "x64"
+target_cpu = "arm64"
+dart_target_arch = "arm64"
+dart_snapshot_kind = "kernel"
+```
+
+The C and C++ compilers are the base system's clang, behind a wrapper that adds `--sysroot` (the `lib`, `usr/lib`, `usr/include` and `usr/libdata` directories of FreeBSD 15.1's arm64 `base.txz`) to aarch64 command lines only. Setting GN's `target_sysroot` instead also applies it to the host toolchain, which breaks the x64 build tools. `dart_snapshot_kind` is `kernel` because app-jit snapshots come from a training run, which can't run on a different CPU, so the bundled tools start a little more slowly than in a native build. The `*.sym` files were removed, as in the amd64 bootstrap.
+
+It has only been tested in a FreeBSD 15.1 arm64 virtual machine under QEMU (Cortex-A72): it runs the build's Dart code, and `dart create`, `pub get`, `analyze`, `test` and `compile exe` work. A native build of the port on aarch64 hardware hasn't been done yet. Once one is, the next aarch64 bootstrap can be built natively like the amd64 one.

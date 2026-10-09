@@ -2,7 +2,7 @@
 
 A FreeBSD port of the [Dart SDK](https://dart.dev/), `lang/dart`. It builds the full SDK natively on FreeBSD: the VM, the `dart` tool (`create`, `pub`, `analyze`, `format`, `test`, `run`) and the compilers (`dart compile exe`, `js` and `wasm`).
 
-**Status:** Dart 3.13.5 on FreeBSD 15.1 and 14.5, amd64. The port builds and passes `poudriere testport`, but it isn't in the FreeBSD ports tree yet.
+**Status:** Dart 3.13.5 on FreeBSD 15.1 and 14.5. On amd64 the port builds and passes `poudriere testport`, but it isn't in the FreeBSD ports tree yet. aarch64 is untested: its bootstrap was cross-compiled and has only run under emulation (see [`docs/bootstrap.md`](docs/bootstrap.md#aarch64)). Reports from aarch64 hardware are welcome.
 
 ## Installing
 
@@ -23,7 +23,7 @@ The SDK installs to `/usr/local/lib/dart`, with `dart` and `dartaotruntime` link
 The port needs two files: the Dart SDK's source, and an already-built Dart SDK to run the Dart parts of the build (like the bootstrap compiler `lang/go` and `lang/rust` use). Dart publishes neither a source tarball nor FreeBSD binaries, so both come from this repository's [releases](https://github.com/pattems/dart-sdk-freebsd/releases):
 
 - **`dart-sdk-<version>-src.tar.xz`, the source:** the Dart SDK at the release tag, with the dependencies from its `DEPS` file, made on FreeBSD by [`tools/make-dist.sh`](tools/make-dist.sh). The prebuilt Linux and macOS toolchains are left out; the port uses FreeBSD's clang, gn and ninja.
-- **`dart-sdk-<version>-bootstrap-freebsd15-amd64.tar.xz`, the bootstrap:** a compiled Dart SDK for FreeBSD. The build runs it but doesn't install it. Each new one is built on FreeBSD by the previous one; [`docs/bootstrap.md`](docs/bootstrap.md) explains how.
+- **`dart-sdk-<version>-bootstrap-freebsd15-<arch>.tar.xz`, the bootstrap:** a compiled Dart SDK for FreeBSD, one per architecture (`amd64`, `aarch64`). The build runs it but doesn't install it. Each new one is built on FreeBSD by the previous one; [`docs/bootstrap.md`](docs/bootstrap.md) explains how.
 
 The very first bootstrap, and the 3.13.5 source distfile, came from Linux; [`initial-bootstrap/`](initial-bootstrap/) records how.
 
