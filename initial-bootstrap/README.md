@@ -18,3 +18,5 @@ This only has to happen once per architecture. Everything since then, including 
 [`make-dist.sh`](make-dist.sh) here is the Linux version of [`tools/make-dist.sh`](../tools/make-dist.sh). It made `dart-sdk-3.13.5-src.tar.xz`, before the FreeBSD script existed. It runs upstream's `gclient` and `cipd` unchanged, which only run on Linux, macOS and Windows.
 
 The FreeBSD script replaced it after [`tarcmp.py`](tarcmp.py) showed the two give the same result: for `3.14.0-211.1.beta`, the same 157,808 files with the same permissions and contents. `tarcmp.py` compares two source tarballs entry by entry and ignores timestamps and archive order, because the compressed files themselves differ between GNU tar and xz versions even when the contents are the same.
+
+The FreeBSD script, with depot_tools pinned, also reproduces the published `dart-sdk-3.13.5-src.tar.xz` itself: run on FreeBSD 15.1 in October 2026, it gave the same 156,456 entries, with no differences.

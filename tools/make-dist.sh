@@ -23,12 +23,22 @@ HOST_SDK=$(realpath "${2:?$USAGE}")
 WORK=${3:-$HOME/dart-dist}
 NAME=dart-sdk-${VERSION}
 CIPD=https://chrome-infra-packages.appspot.com
+# depot_tools (gclient) is pinned so that the output doesn't depend on when
+# this runs; everything else is pinned by the release tag's DEPS.
+DEPOT_TOOLS_REV=071d5b9d91e06cb2a9c9ce926d6ee666df185b49
 
 mkdir -p "$WORK"
 cd "$WORK"
 if [ ! -d depot_tools ]; then
-	git clone -q --depth 1 \
-	    https://chromium.googlesource.com/chromium/tools/depot_tools.git
+	git init -q depot_tools
+	git -C depot_tools fetch -q --depth 1 \
+	    https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+	    "$DEPOT_TOOLS_REV"
+	git -C depot_tools checkout -q FETCH_HEAD
+fi
+if [ "$(git -C depot_tools rev-parse HEAD)" != "$DEPOT_TOOLS_REV" ]; then
+	echo "$WORK/depot_tools is not at $DEPOT_TOOLS_REV; remove it" >&2
+	exit 1
 fi
 export DEPOT_TOOLS_UPDATE=0 DEPOT_TOOLS_METRICS=0
 # Keep the output independent of who runs this: package_config.json records
