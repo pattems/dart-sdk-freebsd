@@ -34,8 +34,10 @@ MAKE_ENV=	HOME=${WRKDIR}
 BINARY_ALIAS=	git=false python3=${PYTHON_CMD}
 
 # The source distfile is a gclient checkout of the release tag without the
-# prebuilt Linux toolchains; see make-dist.sh. The bootstrap is a FreeBSD
-# build of the Dart SDK, used to run the Dart parts of the build.
+# prebuilt Linux toolchains. The bootstrap is a FreeBSD build of the Dart
+# SDK, used to run the Dart parts of the build. Both are made with the tools
+# in https://github.com/pattems/dart-sdk-freebsd: tools/make-dist.sh for
+# the source, and docs/bootstrap.md describes the bootstraps.
 BOOTSTRAP_VERSION=	3.13.5
 
 DART_ARCH=	${ARCH:S/aarch64/arm64/:S/amd64/x64/}
