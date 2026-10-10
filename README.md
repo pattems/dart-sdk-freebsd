@@ -22,10 +22,10 @@ The SDK installs to `/usr/local/lib/dart`, with `dart` and `dartaotruntime` link
 
 The port needs two files: the Dart SDK's source, and an already-built Dart SDK to run the Dart parts of the build (like the bootstrap compiler `lang/go` and `lang/rust` use). Dart publishes neither a source tarball nor FreeBSD binaries, so both come from this repository's [releases](https://github.com/pattems/dart-sdk-freebsd/releases):
 
-- **`dart-sdk-<version>-src.tar.xz`, the source:** the Dart SDK at the release tag, with the dependencies from its `DEPS` file, made on FreeBSD by [`tools/make-dist.sh`](tools/make-dist.sh). The prebuilt Linux and macOS toolchains are left out; the port uses FreeBSD's clang, gn and ninja.
+- **`dart-sdk-<version>-src.tar.xz`, the source:** the Dart SDK at the release tag, with the dependencies from its `DEPS` file, made on FreeBSD by [`tools/make-dist.sh`](tools/make-dist.sh). The script pins its tools, so with the same GNU tar and xz versions it reproduces the published file byte for byte. The prebuilt Linux and macOS toolchains are left out; the port uses FreeBSD's clang, gn and ninja.
 - **`dart-sdk-<version>-bootstrap-freebsd15-<arch>.tar.xz`, the bootstrap:** a compiled Dart SDK for FreeBSD, one per architecture (`amd64`, `aarch64`). The build runs it but doesn't install it. Each new one is built on FreeBSD by the previous one; [`docs/bootstrap.md`](docs/bootstrap.md) explains how.
 
-The very first bootstrap, and the 3.13.5 source distfile, came from Linux; [`initial-bootstrap/`](initial-bootstrap/) records how.
+The very first bootstrap came from Linux, and so did the first 3.13.5 source distfile, before it was replaced by the FreeBSD-made one; [`initial-bootstrap/`](initial-bootstrap/) records how.
 
 ## The patches
 
