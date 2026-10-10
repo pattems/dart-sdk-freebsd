@@ -10,8 +10,15 @@ MAINTAINER=	patrick@crandol.com
 COMMENT=	Dart programming language SDK
 WWW=		https://dart.dev/
 
-LICENSE=	BSD3CLAUSE
-LICENSE_FILE=	${WRKSRC}/LICENSE
+LICENSE=	APACHE20 BSD3CLAUSE ICU MIT ZLIB
+LICENSE_COMB=	multi
+LICENSE_NAME_ICU=	Unicode License V3
+LICENSE_FILE_APACHE20=	${WRKSRC}/third_party/perfetto/src/LICENSE
+LICENSE_FILE_BSD3CLAUSE=	${WRKSRC}/LICENSE
+LICENSE_FILE_ICU=	${WRKSRC}/third_party/icu/LICENSE
+LICENSE_FILE_MIT=	${WRKSRC}/third_party/pkg/tar/LICENSE
+LICENSE_FILE_ZLIB=	${WRKSRC}/third_party/zlib/LICENSE
+LICENSE_PERMS_ICU=	dist-mirror dist-sell pkg-mirror pkg-sell auto-accept
 
 ONLY_FOR_ARCHS=	aarch64 amd64
 ONLY_FOR_ARCHS_REASON=	no bootstrap SDK for other architectures yet
@@ -19,6 +26,9 @@ ONLY_FOR_ARCHS_REASON=	no bootstrap SDK for other architectures yet
 BUILD_DEPENDS=	gn:devel/gn
 
 USES=		ninja:build python:build tar:xz
+
+MAKE_ENV=	HOME=${WRKDIR}
+
 # The build scripts ask git for version information and cope with git
 # failing, but not with it being absent.
 BINARY_ALIAS=	git=false python3=${PYTHON_CMD}
@@ -59,8 +69,6 @@ GN_ARGS=	target_os="freebsd" \
 		verify_sdk_hash=false \
 		dart_version_git_info=false \
 		dart_support_perfetto=true
-
-MAKE_ENV=	HOME=${WRKDIR}
 
 .include <bsd.port.options.mk>
 
@@ -106,9 +114,9 @@ do-install:
 	cd ${WRKSRC}/out/release/dart-sdk && \
 		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/${SDKDIR}
 	${FIND} ${STAGEDIR}${PREFIX}/${SDKDIR} -name '*.sym' -delete
-	# The SDK already contains the stripped binaries (see *_stripped_binary),
-	# but not stripped AOT snapshots, which are ELF shared objects with
-	# DWARF. The VM doesn't need it for Dart stack traces.
+# The SDK already contains the stripped binaries (see *_stripped_binary),
+# but not stripped AOT snapshots, which are ELF shared objects with
+# DWARF. The VM doesn't need it for Dart stack traces.
 	${STRIP_CMD} ${STAGEDIR}${PREFIX}/${SDKDIR}/bin/snapshots/*_aot.dart.snapshot \
 		${STAGEDIR}${PREFIX}/${SDKDIR}/bin/snapshots/dart2bytecode.dart.snapshot \
 		${STAGEDIR}${PREFIX}/${SDKDIR}/bin/snapshots/dart2wasm_product.snapshot
