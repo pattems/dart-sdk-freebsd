@@ -9,7 +9,7 @@ It was made in two stages, in October 2026:
 1. **Stage 0:** Dart 3.13.5 with this port's patches, built on FreeBSD 15.1 amd64 with the Linux compatibility layer loaded. The compilers and linker were FreeBSD's; only the build's Dart steps (front end, snapshot generators and so on) ran on upstream's Linux SDK. The result is a native FreeBSD SDK.
 2. **Stage 1:** the same source built again with the stage 0 SDK as the host, and the Linux compatibility layer unloaded. This shows that the FreeBSD SDK can rebuild itself without any Linux binaries.
 
-The published `dart-sdk-3.13.5-bootstrap-freebsd15-amd64.tar.xz` is the stage 1 SDK, with the debug symbol files (`*.sym`) removed and the binaries stripped.
+The published `dart-sdk-3.13.5-bootstrap-freebsd15-amd64.tar.xz` is the stage 1 SDK, with the debug symbol files (`*.sym`) removed and the binaries and AOT snapshots stripped.
 
 This only has to happen once per architecture. Everything since then, including bootstraps for new releases, is built on FreeBSD from this one.
 
