@@ -106,7 +106,12 @@ do-install:
 	cd ${WRKSRC}/out/release/dart-sdk && \
 		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/${SDKDIR}
 	${FIND} ${STAGEDIR}${PREFIX}/${SDKDIR} -name '*.sym' -delete
-	# The SDK already contains the stripped binaries (see *_stripped_binary).
+	# The SDK already contains the stripped binaries (see *_stripped_binary),
+	# but not stripped AOT snapshots, which are ELF shared objects with
+	# DWARF. The VM doesn't need it for Dart stack traces.
+	${STRIP_CMD} ${STAGEDIR}${PREFIX}/${SDKDIR}/bin/snapshots/*_aot.dart.snapshot \
+		${STAGEDIR}${PREFIX}/${SDKDIR}/bin/snapshots/dart2bytecode.dart.snapshot \
+		${STAGEDIR}${PREFIX}/${SDKDIR}/bin/snapshots/dart2wasm_product.snapshot
 	cd ${STAGEDIR}${PREFIX}/${SDKDIR} && ${CHMOD} 555 ${SDK_PROGRAMS}
 	${RLN} ${STAGEDIR}${PREFIX}/${SDKDIR}/bin/dart ${STAGEDIR}${PREFIX}/bin/dart
 	${RLN} ${STAGEDIR}${PREFIX}/${SDKDIR}/bin/dartaotruntime \
